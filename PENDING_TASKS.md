@@ -35,7 +35,7 @@
 | **Venue Authority Matrix** | 100% | 0% | 🔴 Pending (Core business rule not implemented) |
 | **Booking & Conflict Engine** | 100% | 0% | 🔴 Pending (No backend time overlap check) |
 | **Approval Workflow** | 100% | 0% | 🔴 Pending |
-| **PostgreSQL Database & Schema** | 90% | 0% | 🔴 Pending (MongoDB package present in boilerplate) |
+| **PostgreSQL Database & Schema** | 90% | 90% | 🟢 Completed (Prisma ORM & PostgreSQL schema initialized and seeded) |
 | **PostgreSQL Transactions & ACID** | 80% | 0% | 🔴 Pending |
 | **Concurrency Control & Row Locks** | 80% | 0% | 🔴 Pending (Simultaneous request handling missing) |
 | **OS Scheduling Simulators (FCFS/Priority/RR)** | 70% | 0% | 🔴 Pending (Dummy placeholder card only) |
@@ -53,7 +53,7 @@
 ## 2. Phase A: Tech Stack Cleanup & PostgreSQL Database Foundation
 
 ### 🔨 Tasks:
-- [ ] **Package Cleanup**:
+- [x] **Package Cleanup**:
   - Remove `mongodb` from `package.json` (`pnpm remove mongodb`).
   - Install core backend and database dependencies:
     - `prisma` & `@prisma/client` (or `pg` + `drizzle-orm`)
@@ -61,12 +61,12 @@
     - `jsonwebtoken` + `@types/jsonwebtoken`
     - `zod` (Input validation)
     - `date-fns` (Date calculations)
-- [ ] **Environment Configuration (`.env`)**:
-  - Set `DATABASE_URL="postgresql://username:password@localhost:5432/venue_booking_db?schema=public"`
+- [x] **Environment Configuration (`.env`)**:
+  - Set `DATABASE_URL="postgresql://lavanya:DrwDoqIAuVkLwhuC6MNMUHZdeOi2a0Q0@dpg-daijr66k1f9s738ghmb0-a.oregon-postgres.render.com/venuebooking"`
   - Set `JWT_SECRET="super-secret-jwt-key"`
   - Set `NEXTAUTH_SECRET` / App secrets
-- [ ] **Create 8 Core Normalized Relational Tables**:
-  - [ ] `users`:
+- [x] **Create 8 Core Normalized Relational Tables**:
+  - [x] `users`:
     - `user_id` (UUID / Serial, PK)
     - `name` (VARCHAR(100), NOT NULL)
     - `email` (VARCHAR(150), UNIQUE, NOT NULL)
@@ -76,7 +76,7 @@
     - `phone` (VARCHAR(20))
     - `created_at` (TIMESTAMP DEFAULT NOW())
     - `updated_at` (TIMESTAMP DEFAULT NOW())
-  - [ ] `venues`:
+  - [x] `venues`:
     - `venue_id` (UUID / Serial, PK)
     - `venue_name` (VARCHAR(100), UNIQUE, NOT NULL)
     - `location` (VARCHAR(200), NOT NULL)
@@ -85,7 +85,7 @@
     - `description` (TEXT)
     - `status` (ENUM: `'ACTIVE'`, `'MAINTENANCE'`, `'INACTIVE'`, DEFAULT `'ACTIVE'`)
     - `created_at` & `updated_at`
-  - [ ] `employees`:
+  - [x] `employees`:
     - `employee_id` (UUID / Serial, PK)
     - `user_id` (FK → `users.user_id`, UNIQUE, NOT NULL)
     - `employee_code` (VARCHAR(50), UNIQUE, NOT NULL)
@@ -93,7 +93,7 @@
     - `department` (VARCHAR(100), NOT NULL)
     - `status` (VARCHAR(20), DEFAULT `'ACTIVE'`)
     - `created_at` (TIMESTAMP DEFAULT NOW())
-  - [ ] `venue_authority`:
+  - [x] `venue_authority`:
     - `authority_id` (UUID / Serial, PK)
     - `employee_id` (FK → `employees.employee_id`, NOT NULL)
     - `venue_id` (FK → `venues.venue_id`, NOT NULL)
@@ -101,7 +101,7 @@
     - `assigned_at` (TIMESTAMP DEFAULT NOW())
     - `status` (ENUM: `'ACTIVE'`, `'REVOKED'`, DEFAULT `'ACTIVE'`)
     - **Constraint:** `UNIQUE (employee_id, venue_id)`
-  - [ ] `bookings`:
+  - [x] `bookings`:
     - `booking_id` (UUID / Serial, PK)
     - `user_id` (FK → `users.user_id`, NOT NULL)
     - `venue_id` (FK → `venues.venue_id`, NOT NULL)
@@ -113,14 +113,14 @@
     - `expected_attendees` (INT, CHECK (expected_attendees > 0), NOT NULL)
     - `status` (ENUM: `'PENDING'`, `'APPROVED'`, `'REJECTED'`, `'CANCELLED'`, `'COMPLETED'`, DEFAULT `'PENDING'`)
     - `created_at` & `updated_at`
-  - [ ] `approvals`:
+  - [x] `approvals`:
     - `approval_id` (UUID / Serial, PK)
     - `booking_id` (FK → `bookings.booking_id`, NOT NULL)
     - `employee_id` (FK → `employees.employee_id`, NOT NULL)
     - `action` (ENUM: `'APPROVED'`, `'REJECTED'`, NOT NULL)
     - `remarks` (TEXT)
     - `action_at` (TIMESTAMP DEFAULT NOW())
-  - [ ] `notifications`:
+  - [x] `notifications`:
     - `notification_id` (UUID / Serial, PK)
     - `user_id` (FK → `users.user_id`, NOT NULL)
     - `booking_id` (FK → `bookings.booking_id`, NULLABLE)
@@ -129,7 +129,7 @@
     - `notification_type` (VARCHAR(50), NOT NULL)
     - `is_read` (BOOLEAN DEFAULT FALSE)
     - `created_at` (TIMESTAMP DEFAULT NOW())
-  - [ ] `audit_logs`:
+  - [x] `audit_logs`:
     - `log_id` (UUID / Serial, PK)
     - `user_id` (FK → `users.user_id`, NULLABLE)
     - `action` (VARCHAR(100), NOT NULL)
@@ -137,13 +137,13 @@
     - `entity_id` (VARCHAR(100), NOT NULL)
     - `details` (JSONB / TEXT)
     - `created_at` (TIMESTAMP DEFAULT NOW())
-- [ ] **Performance Indexes**:
+- [x] **Performance Indexes**:
   - `CREATE INDEX idx_bookings_lookup ON bookings(venue_id, event_date, status, start_time, end_time);`
   - `CREATE INDEX idx_user_bookings ON bookings(user_id, status);`
   - `CREATE INDEX idx_venue_authority ON venue_authority(employee_id, venue_id, status);`
   - `CREATE INDEX idx_approvals_booking ON approvals(booking_id);`
   - `CREATE INDEX idx_notifications_user ON notifications(user_id, is_read);`
-- [ ] **Database Seeder (`prisma/seed.ts` or `scripts/seed.sql`)**:
+- [x] **Database Seeder (`prisma/seed.ts` or `scripts/seed.sql`)**:
   - Seed 1 Admin (`admin@college.edu`)
   - Seed 3 Employees (`emp_auditorium@college.edu`, `emp_seminar@college.edu`, `emp_hod@college.edu`)
   - Seed 2 Students (`student1@college.edu`, `student2@college.edu`)
