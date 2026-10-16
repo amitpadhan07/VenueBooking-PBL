@@ -221,16 +221,18 @@ async function runLavanyaDefenseSuite() {
 
     // TEST 7: Atomicity Rollback Guarantee
     console.log('\n--- TEST 7: ACID Atomicity & Rollback Integrity ---')
+    const sampleUser = await prisma.user.findFirst()
+    const sampleVenue = await prisma.venue.findFirst()
     const initialBookingCount = await prisma.booking.count()
     let errorCaught = false
 
     try {
       await prisma.$transaction(async (tx) => {
-        // Create an uncommitted booking
+        // Create an uncommitted booking using tx
         await tx.booking.create({
           data: {
-            user_id: (await prisma.user.findFirst())?.user_id || '',
-            venue_id: (await prisma.venue.findFirst())?.venue_id || '',
+            user_id: sampleUser?.user_id || '',
+            venue_id: sampleVenue?.venue_id || '',
             event_name: 'Intentional Rollback Test',
             event_date: new Date(),
             start_time: '19:00',
@@ -243,8 +245,10 @@ async function runLavanyaDefenseSuite() {
         throw new Error('INTENTIONAL_ATOMICITY_TEST_ABORT')
       })
     } catch (e: any) {
-      if (e.message.includes('INTENTIONAL_ATOMICITY_TEST_ABORT')) {
+      if (e.message?.includes('INTENTIONAL_ATOMICITY_TEST_ABORT')) {
         errorCaught = true
+      } else {
+        console.error('Unexpected transaction error:', e)
       }
     }
 

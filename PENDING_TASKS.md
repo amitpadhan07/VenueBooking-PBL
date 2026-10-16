@@ -30,23 +30,23 @@
 | Module | Target % | Current % | Status |
 | :--- | :---: | :---: | :--- |
 | **Authentication & RBAC** | 100% | 100% | 🟢 Completed (bcrypt 10 rounds, JWT sessions, role boundaries) |
-| **User & Employee Management** | 100% | 80% | 🟢 Substantially Complete (Prisma users & employees linked) |
-| **Venue Management** | 100% | 60% | 🟡 In Progress (Prisma inventory active & authority mapping) |
+| **User & Employee Management** | 100% | 100% | 🟢 Completed (Prisma users & employees linked 1:1, seed active) |
+| **Venue Management** | 100% | 100% | 🟢 Completed (Prisma inventory active, capacity constraints & availability API) |
 | **Venue Authority Matrix** | 100% | 100% | 🟢 Completed (Relational delegation API, composite uniqueness) |
-| **Booking & Conflict Engine** | 100% | 90% | 🟢 Substantially Complete (Backend time overlap & transactional safety) |
-| **Approval Workflow** | 100% | 85% | 🟢 Substantially Complete (Venue authority verified approvals, 403 enforcement) |
-| **PostgreSQL Database & Schema** | 90% | 100% | 🟢 Completed (Prisma ORM & PostgreSQL schema live on Render) |
-| **PostgreSQL Transactions & ACID** | 80% | 100% | 🟢 Completed (Row-level locking & ACID transactions live) |
-| **Concurrency Control & Row Locks** | 80% | 100% | 🟢 Completed (Pessimistic FOR UPDATE locking active) |
+| **Booking & Conflict Engine** | 100% | 100% | 🟢 Completed (Lavanya Joshi: Backend time overlap, full validation rules, availability/my/cancel APIs) |
+| **Approval Workflow** | 100% | 90% | 🟢 Substantially Complete (Venue authority verified approvals, 403 enforcement) |
+| **PostgreSQL Database & Schema** | 90% | 100% | 🟢 Completed (Lavanya Joshi: 8-table 3NF schema live on Render PostgreSQL) |
+| **PostgreSQL Transactions & ACID** | 80% | 100% | 🟢 Completed (Lavanya Joshi: Row-level locking & ACID transactions live) |
+| **Concurrency Control & Row Locks** | 80% | 100% | 🟢 Completed (Lavanya Joshi: Pessimistic FOR UPDATE locking active) |
 | **OS Scheduling Simulators (FCFS/Priority/RR)** | 70% | 100% | 🟢 Completed (Interactive FCFS, Priority, RR + Gantt chart) |
-| **Critical Section & Synchronization Demo** | 80% | 75% | 🟢 Substantially Complete (Row-lock mapping to critical section demonstrated) |
+| **Critical Section & Synchronization Demo** | 80% | 100% | 🟢 Completed (Lavanya Joshi: Critical section visualizer & row-lock race test active) |
 | **Deadlock Simulator (Circular Wait)** | 70% | 100% | 🟢 Completed (4 Coffman conditions, RAG bipartite graph, DFS cycle detection) |
 | **Banker's Algorithm Simulator** | 70% | 100% | 🟢 Completed (Need matrix, Safety algorithm with Work/Finish, Safe sequence, Request tester) |
-| **DBMS Academic Concepts & SQL Lab** | 80% | 100% | 🟢 Completed (Live SQL query playground, 3NF schema, ACID breakdown, WAL visualizer) |
-| **In-App Notifications** | 70% | 85% | 🟢 Substantially Complete (Transactional notification triggers live) |
-| **Analytics & Reports** | 60% | 60% | 🟡 In Progress (Live aggregations in DBMS Lab & Audit viewer) |
-| **Testing Suite & Concurrency Test** | 60% | 90% | 🟢 Substantially Complete (12/12 automated defense tests + Promise.all race test) |
-| **Frontend Polish & Responsive UI** | 90% | 90% | 🟢 Substantially Complete (Responsive workspace with live academic labs) |
+| **DBMS Academic Concepts & SQL Lab** | 80% | 100% | 🟢 Completed (Lavanya Joshi: Live SQL query playground, 3NF schema, anomaly elimination, ACID visualizer) |
+| **In-App Notifications** | 70% | 90% | 🟢 Substantially Complete (Transactional notification triggers live) |
+| **Analytics & Reports** | 60% | 75% | 🟢 Substantially Complete (Live aggregations in DBMS Lab & Audit viewer) |
+| **Testing Suite & Concurrency Test** | 60% | 100% | 🟢 Completed (15/15 Lavanya DBMS/OS tests + 12/12 Akshat OS tests passing, 100%) |
+| **Frontend Polish & Responsive UI** | 90% | 95% | 🟢 Substantially Complete (Responsive workspace with live academic labs & defense scripts) |
 
 ---
 
@@ -206,14 +206,14 @@ A requested time interval $[S_{\text{req}}, E_{\text{req}}]$ conflicts with an e
 $$\text{Conflict} \iff (S_{\text{exist}} < E_{\text{req}}) \land (E_{\text{exist}} > S_{\text{req}})$$
 *(Considering only active bookings where $\text{status} \in \{\text{'PENDING'}, \text{'APPROVED'}\}$).*
 
-### 🔨 Tasks:
-- [ ] **Backend Validation Rules**:
-  - `start_time < end_time`
-  - `event_date >= CURRENT_DATE`
-  - `expected_attendees <= venue.capacity`
-  - `expected_attendees > 0`
-  - Venue `status === 'ACTIVE'`
-- [ ] **Slot Availability Query**:
+### 🔨 Tasks (Lead Developer: Lavanya Joshi):
+- [x] **Backend Validation Rules**:
+  - `start_time < end_time` (Strict order enforcement)
+  - `event_date >= CURRENT_DATE` (Rejection of past booking attempts)
+  - `expected_attendees <= venue.capacity` (Physical seating capacity guard)
+  - `expected_attendees > 0` (Positive integer constraint)
+  - Venue `status === 'ACTIVE'` (Maintenance/Inactive protection)
+- [x] **Slot Availability Query**:
   ```sql
   SELECT * FROM bookings
   WHERE venue_id = $1
@@ -222,16 +222,18 @@ $$\text{Conflict} \iff (S_{\text{exist}} < E_{\text{req}}) \land (E_{\text{exist
     AND start_time < $4
     AND end_time > $3;
   ```
-- [ ] **API Endpoints**:
+- [x] **API Endpoints**:
+  - `GET /api/bookings`: Fetch list of bookings with filtering by `venueId`, `status`, `userId`, `date`.
   - `GET /api/bookings/availability?venueId=...&date=...`: Returns booked time slots and available time intervals for a venue on a given date.
-  - `POST /api/bookings`: Submits a new booking request in `PENDING` state.
-  - `GET /api/bookings/my`: Returns current logged-in user's booking history and statuses.
-  - `GET /api/bookings/[id]`: Fetch single booking details with approval history.
-  - `PATCH /api/bookings/[id]/cancel`: Student cancels own `PENDING` booking $\rightarrow$ transitions to `CANCELLED`.
+  - `POST /api/bookings`: Submits a new booking request in `PENDING` state with full relational validation.
+  - `GET /api/bookings/my`: Returns current logged-in user's booking history and statistics.
+  - `GET /api/bookings/[id]`: Fetch single booking details with approval history and audit logs.
+  - `PATCH /api/bookings/[id]/cancel`: Student cancels own `PENDING` booking $\rightarrow$ transitions to `CANCELLED` with audit trail and notification.
 
 ---
 
 ## 6. Phase E: PostgreSQL Concurrency Control & ACID Transactions
+*(Lead Developer: Lavanya Joshi – See [LAVANYA_DEFENSE_GUIDE.md](file:///c:/projects/VenueBooking-PBL/LAVANYA_DEFENSE_GUIDE.md))*
 
 ### 🔨 The Concurrency Challenge:
 When **Student A** and **Student B** submit requests for the same venue and time slot simultaneously, a naive system will execute two read checks that both return "Available", creating a double booking.
@@ -345,6 +347,7 @@ When **Student A** and **Student B** submit requests for the same venue and time
 ---
 
 ## 9. Phase H: Database Management Systems (DBMS) Academic Lab
+*(Lead Developer: Lavanya Joshi – See [LAVANYA_DEFENSE_GUIDE.md](file:///c:/projects/VenueBooking-PBL/LAVANYA_DEFENSE_GUIDE.md))*
 
 ### 🔨 Tasks (`/dbms-lab`):
 - [x] **Interactive ER Diagram & Relational Schema**:
@@ -352,17 +355,20 @@ When **Student A** and **Student B** submit requests for the same venue and time
   - Cardinality indicators: $1:N$, $N:M$ (resolved via associative tables).
 - [x] **Normalization Walkthrough**:
   - Step-by-step breakdown: Unnormalized Form (UNF) $\to$ 1NF $\to$ 2NF $\to$ 3NF / BCNF.
+  - Elimination of Insertion Anomaly, Deletion Anomaly, and Update Anomaly.
   - Justification of why `venue_authority` is separated from `employees` and `venues`.
 - [x] **Live SQL Query Playground**:
   - Interactive SQL executor with sample pre-built queries:
-    - **Query 1 (JOIN)**: Join `users + bookings + venues` to list all bookings with student names and venue details.
-    - **Query 2 (Authority JOIN)**: Join `employees + venue_authority + venues` to show who can approve which venue.
+    - **Query 1 (JOIN)**: Join `users + bookings + venues` ($\Pi_{\text{event}, \text{student}, \text{venue}} (\text{bookings} \bowtie \text{users} \bowtie \text{venues})$).
+    - **Query 2 (Authority JOIN)**: Join `employees + venue_authority + venues` ($\Pi_{\text{emp\_code}, \text{name}, \text{venue}} (\text{venue\_authority} \bowtie \text{employees} \bowtie \text{venues})$).
     - **Query 3 (Aggregations & GROUP BY)**: Count total bookings per venue grouped by status.
     - **Query 4 (Departmental Utilization)**: Total hours booked per department.
     - **Query 5 (Subquery & Overlap)**: Find venues with no bookings on a selected date.
 - [x] **ACID Properties Visualizer**:
   - Interactive walkthrough of a booking transaction explaining Atomicity, Consistency, Isolation, and Durability.
   - PostgreSQL transaction lifecycle: `BEGIN` $\to$ Query $\to$ Lock $\to$ `COMMIT` / `ROLLBACK`.
+- [x] **Expected Viva Questions & Model Answers**:
+  - Interactive Q&A accordion embedded directly in the live lab UI.
 
 ---
 
@@ -427,42 +433,51 @@ When **Student A** and **Student B** submit requests for the same venue and time
 ## 12. Phase K: Testing Suite & Verification Harness
 
 ### 🔨 Tasks:
-- [ ] **Automated / Reproducible Test Scripts**:
-  1. `test-login-valid`: Test successful authentication and JWT issuance.
-  2. `test-login-invalid`: Test rejection of bad passwords.
-  3. `test-booking-valid`: Create a valid booking in empty time slot.
-  4. `test-booking-overlap`: Attempt to create overlapping booking $\rightarrow$ Expect conflict error.
-  5. `test-booking-adjacent`: Book $[10:00 - 12:00]$ and $[12:00 - 14:00]$ on same venue $\rightarrow$ Expect success (No conflict).
-  6. `test-concurrent-booking`: Send 2 parallel HTTP POST requests with exact same parameters $\rightarrow$ Expect 1 success, 1 failure (Double-booking prevented).
-  7. `test-unauthorized-approval`: Employee attempts to approve venue they are NOT authorized for $\rightarrow$ Expect 403 Forbidden.
-  8. `test-authorized-approval`: Employee approves venue they ARE authorized for $\rightarrow$ Expect 200 OK & Status = APPROVED.
-  9. `test-booking-cancel`: User cancels pending booking $\rightarrow$ Expect status = CANCELLED.
-  10. `test-capacity-validation`: Request booking with attendees > venue capacity $\rightarrow$ Expect validation error.
-  11. `test-scheduling-fcfs`: Verify FCFS math (CT, TAT, WT).
-  12. `test-scheduling-rr`: Verify Round Robin Gantt chart and quantum preemption.
-  13. `test-bankers-safe`: Verify Banker's Algorithm produces correct safe sequence.
-  14. `test-bankers-unsafe`: Verify Banker's Algorithm flags unsafe deadlock scenario.
-  15. `test-audit-trail`: Verify audit log entry is written upon booking approval.
+- [x] **Automated / Reproducible Test Scripts**:
+  - [x] `scripts/test-lavanya-defense.ts` (Lavanya Joshi: 15/15 tests passing, 100%)
+    - 8-Table Relational Schema & Cardinality validation
+    - 3NF Anomaly Elimination (Insertion, Update, Deletion)
+    - Relational Algebra Multi-Table JOIN
+    - Time-interval overlap detection math ($S_{\text{exist}} < E_{\text{req}} \land E_{\text{exist}} > S_{\text{req}}$)
+    - Critical section mutual exclusion simulation
+    - PostgreSQL Pessimistic Row Lock (`SELECT ... FOR UPDATE`)
+    - ACID Atomicity rollback guarantee
+  - [x] `scripts/test-phase2-defense.ts` (Akshat Dobhal: 12/12 tests passing, 100%)
+    - Bcrypt password work factor 10 & verification
+    - Stateless JWT session issuance & claim verification
+    - Dijkstra's Banker's Algorithm safety & resource request tester
+    - Resource Allocation Graph (RAG) circular wait cycle detection
+  - [x] `test-concurrent-booking`: Send 2 parallel HTTP POST requests with exact same parameters $\rightarrow$ Expect 1 success, 1 failure (Double-booking prevented via `POST /api/demo/concurrency-test`).
+  - [x] `test-unauthorized-approval`: Employee attempts to approve venue they are NOT authorized for $\rightarrow$ Expect 403 Forbidden.
+  - [x] `test-authorized-approval`: Employee approves venue they ARE authorized for $\rightarrow$ Expect 200 OK & Status = APPROVED.
+  - [x] `test-booking-cancel`: User cancels pending booking $\rightarrow$ Expect status = CANCELLED (`PATCH /api/bookings/[id]/cancel`).
+  - [x] `test-capacity-validation`: Request booking with attendees > venue capacity $\rightarrow$ Expect validation error.
+  - [x] `test-scheduling-fcfs`: Verify FCFS math (CT, TAT, WT).
+  - [x] `test-scheduling-rr`: Verify Round Robin Gantt chart and quantum preemption.
+  - [x] `test-bankers-safe`: Verify Banker's Algorithm produces correct safe sequence.
+  - [x] `test-bankers-unsafe`: Verify Banker's Algorithm flags unsafe deadlock scenario.
+  - [x] `test-audit-trail`: Verify audit log entry is written upon booking approval.
 
 ---
 
 ## 13. Phase L: Live Demonstration Checklist for Phase 2 Defense
 
-- [ ] **DEMO 1: Student Booking Flow**
+- [x] **DEMO 1: Student Booking Flow**
   - Student logs in $\to$ Browses venues $\to$ Checks availability $\to$ Submits booking for Auditorium $[10:00 - 12:00]$ $\to$ Booking appears as `PENDING`.
-- [ ] **DEMO 2: Authority-Enforced Approval Flow**
+- [x] **DEMO 2: Authority-Enforced Approval Flow**
   - Employee A (Authorized for Auditorium) logs in $\to$ Sees pending request $\to$ Approves with remark $\to$ Student dashboard updates to `APPROVED` with notification.
   - Employee B (Authorized for Seminar Hall only) logs in $\to$ Auditorium request is NOT visible/actionable.
-- [ ] **DEMO 3: Admin Authority Delegation**
+- [x] **DEMO 3: Admin Authority Delegation**
   - Admin logs in $\to$ Assigns Employee B authority over Auditorium $\to$ Employee B can now approve Auditorium bookings.
-- [ ] **DEMO 4: Real-Time Concurrent Booking (OS/DBMS Concurrency Control)**
-  - Execute concurrency test button/script: Two simultaneous booking attempts for same venue and slot $\to$ PostgreSQL row lock serializes $\to$ 1 succeeds, 1 safely rejected.
-- [ ] **DEMO 5: Interactive OS Scheduling & Gantt Chart**
+- [x] **DEMO 4: Real-Time Concurrent Booking (OS/DBMS Concurrency Control - Lavanya Joshi)**
+  - Execute concurrency test button/script: Two simultaneous booking attempts for same venue and slot $\to$ PostgreSQL row lock serializes $\to$ 1 succeeds with HTTP 201, 1 safely rejected with HTTP 409.
+- [x] **DEMO 5: Interactive OS Scheduling & Gantt Chart (Akshat Dobhal)**
   - Add 4 processes $\to$ Switch between FCFS, Priority, and Round Robin $\to$ Show live recalculated Gantt chart, Average WT, and Average TAT.
-- [ ] **DEMO 6: Deadlock & Banker's Algorithm Lab**
+- [x] **DEMO 6: Deadlock & Banker's Algorithm Lab (Akshat Dobhal)**
   - Simulate circular wait deadlock $\to$ Load Banker's matrix $\to$ Demonstrate safe sequence calculation and rejection of unsafe resource requests.
-- [ ] **DEMO 7: DBMS Concepts & Live SQL Playground**
-  - Showcase normalized relational schema, live SQL JOIN queries, and transaction ACID properties.
+- [x] **DEMO 7: DBMS Concepts & Live SQL Playground (Lavanya Joshi)**
+  - Showcase normalized relational schema, live SQL JOIN queries, elimination of anomalies, and transaction ACID properties.
+  - See full presentation guide: [LAVANYA_DEFENSE_GUIDE.md](file:///c:/projects/VenueBooking-PBL/LAVANYA_DEFENSE_GUIDE.md).
 
 ---
 
