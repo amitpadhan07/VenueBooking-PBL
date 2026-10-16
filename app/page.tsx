@@ -119,10 +119,23 @@ function Metric({
 }
 
 function BookingRows({ bookings }: { bookings: BookingItem[] }) {
-  if (!bookings.length) return <Empty title="No bookings found" text="Submit a venue booking request to view records here." />
+  const [filter, setFilter] = useState<'ALL' | 'PENDING' | 'APPROVED' | 'REJECTED'>('ALL')
+  const [searchTerm, setSearchTerm] = useState('')
+
+  const filteredBookings = useMemo(() => {
+    return bookings.filter((b) => {
+      const matchesFilter = filter === 'ALL' || b.status?.toUpperCase() === filter
+      const matchesSearch =
+        !searchTerm ||
+        b.purpose?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        b.venueName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        b.requesterName?.toLowerCase().includes(searchTerm.toLowerCase())
+      return matchesFilter && matchesSearch
+    })
+  }, [bookings, filter, searchTerm])
 
   const getStatusBadge = (status: string) => {
-    switch (status.toUpperCase()) {
+    switch (status?.toUpperCase()) {
       case 'APPROVED':
         return 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20'
       case 'REJECTED':
@@ -135,35 +148,68 @@ function BookingRows({ bookings }: { bookings: BookingItem[] }) {
   }
 
   return (
-    <div className="overflow-auto">
-      <table className="w-full min-w-[620px] text-left text-sm">
-        <thead className="border-b border-border text-muted-foreground">
-          <tr>
-            <th className="p-4">Purpose</th>
-            <th className="p-4">Venue</th>
-            <th className="p-4">Requester</th>
-            <th className="p-4">Slot</th>
-            <th className="p-4">Status</th>
-          </tr>
-        </thead>
-        <tbody>
-          {bookings.map((booking) => (
-            <tr className="border-b border-border/70 hover:bg-muted/40 transition-colors" key={booking._id || booking.id}>
-              <td className="p-4 font-medium">{booking.purpose}</td>
-              <td className="p-4 text-foreground/80">{booking.venueName || booking.venueId}</td>
-              <td className="p-4 text-muted-foreground">{booking.requesterName || booking.requesterId}</td>
-              <td className="p-4 text-xs text-muted-foreground">
-                {booking.date ? `${booking.date} (${booking.startTime || ''}-${booking.endTime || ''})` : 'Scheduled'}
-              </td>
-              <td className="p-4">
-                <span className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-medium ${getStatusBadge(booking.status)}`}>
-                  {booking.status}
-                </span>
-              </td>
-            </tr>
+    <div className="space-y-3 p-4">
+      <div className="flex flex-wrap items-center justify-between gap-3 pb-2">
+        <div className="flex items-center gap-1.5 rounded-xl bg-muted/40 p-1 border border-border">
+          {(['ALL', 'PENDING', 'APPROVED', 'REJECTED'] as const).map((tab) => (
+            <button
+              key={tab}
+              onClick={() => setFilter(tab)}
+              className={`rounded-lg px-3 py-1 text-xs font-medium transition-all ${
+                filter === tab
+                  ? 'bg-background text-foreground shadow-sm font-semibold'
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              {tab === 'ALL' ? 'All Records' : tab}
+            </button>
           ))}
-        </tbody>
-      </table>
+        </div>
+        <div className="relative min-w-[200px]">
+          <Search className="absolute left-3 top-2.5 size-3.5 text-muted-foreground" />
+          <input
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            placeholder="Search event or venue..."
+            className="w-full rounded-xl border border-input bg-background pl-8 pr-3 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-primary"
+          />
+        </div>
+      </div>
+
+      {!filteredBookings.length ? (
+        <Empty title="No bookings found" text="No records match your selected filter." />
+      ) : (
+        <div className="overflow-auto rounded-xl border border-border/60">
+          <table className="w-full min-w-[620px] text-left text-sm">
+            <thead className="border-b border-border bg-muted/20 text-xs text-muted-foreground font-semibold">
+              <tr>
+                <th className="p-3.5">Purpose / Event</th>
+                <th className="p-3.5">Venue Facility</th>
+                <th className="p-3.5">Requester</th>
+                <th className="p-3.5">Scheduled Slot</th>
+                <th className="p-3.5">Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredBookings.map((booking) => (
+                <tr className="border-b border-border/70 hover:bg-muted/40 transition-colors" key={booking._id || booking.id}>
+                  <td className="p-3.5 font-medium">{booking.purpose}</td>
+                  <td className="p-3.5 text-foreground/80">{booking.venueName || booking.venueId}</td>
+                  <td className="p-3.5 text-muted-foreground">{booking.requesterName || booking.requesterId}</td>
+                  <td className="p-3.5 text-xs text-muted-foreground">
+                    {booking.date ? `${booking.date} (${booking.startTime || ''}-${booking.endTime || ''})` : 'Scheduled'}
+                  </td>
+                  <td className="p-3.5">
+                    <span className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-medium ${getStatusBadge(booking.status)}`}>
+                      {booking.status}
+                    </span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   )
 }
@@ -235,12 +281,14 @@ function Overview({ data, role, go }: { data: Data; role: Role; go: (section: Se
 function Bookings({ data, role, refresh }: { data: Data; role: Role; refresh: () => void }) {
   const [open, setOpen] = useState(false)
   const [message, setMessage] = useState('')
+  const [isConflict, setIsConflict] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [form, setForm] = useState({
     venueId: data.venues[0]?._id || data.venues[0]?.id || '',
     purpose: '',
     startAt: '',
     endAt: '',
+    expectedAttendees: 50,
   })
 
   // Synchronize default venueId if empty
@@ -250,8 +298,47 @@ function Bookings({ data, role, refresh }: { data: Data; role: Role; refresh: ()
     }
   }, [data.venues, form.venueId])
 
+  const selectedVenue = useMemo(() => {
+    return data.venues.find((v) => (v._id || v.id) === form.venueId) || data.venues[0]
+  }, [data.venues, form.venueId])
+
+  // Helper for Samridhi's viva demonstration: pre-fills an active slot to demonstrate 409 Conflict
+  const triggerConflictDemo = () => {
+    const existing = data.bookings.find((b) => b.status === 'PENDING' || b.status === 'APPROVED')
+    if (existing && existing.date && existing.startTime && existing.endTime) {
+      const targetVenue = data.venues.find((v) => v.name === existing.venueName) || data.venues[0]
+      if (targetVenue) {
+        setForm({
+          venueId: targetVenue._id || targetVenue.id,
+          purpose: 'Viva Overlap Test: Annual Tech Symposium',
+          startAt: `${existing.date}T${existing.startTime}:00`,
+          endAt: `${existing.date}T${existing.endTime}:00`,
+          expectedAttendees: Math.min(50, targetVenue.capacity),
+        })
+        setOpen(true)
+        setMessage('Pre-filled with an active occupied slot. Click "Submit request" to demonstrate the HTTP 409 Conflict rejection!')
+        setIsConflict(false)
+        return
+      }
+    }
+
+    // Fallback tomorrow slot
+    const tomorrow = new Date()
+    tomorrow.setDate(tomorrow.getDate() + 1)
+    const dateStr = tomorrow.toISOString().split('T')[0]
+    setForm({
+      venueId: data.venues[0]?._id || data.venues[0]?.id || '',
+      purpose: 'Simulated Overlap Event',
+      startAt: `${dateStr}T10:00:00`,
+      endAt: `${dateStr}T12:00:00`,
+      expectedAttendees: 50,
+    })
+    setOpen(true)
+  }
+
   async function submit() {
     setMessage('')
+    setIsConflict(false)
     if (!form.venueId) {
       setMessage('Please select a venue.')
       return
@@ -264,6 +351,10 @@ function Bookings({ data, role, refresh }: { data: Data; role: Role; refresh: ()
       setMessage('Please enter both start and end date/time.')
       return
     }
+    if (selectedVenue && form.expectedAttendees > selectedVenue.capacity) {
+      setMessage(`Capacity Rule Violation: Expected attendees (${form.expectedAttendees}) exceeds venue capacity (${selectedVenue.capacity}).`)
+      return
+    }
 
     setIsSubmitting(true)
     try {
@@ -274,6 +365,9 @@ function Bookings({ data, role, refresh }: { data: Data; role: Role; refresh: ()
       })
       const payload = await response.json().catch(() => ({ error: 'Invalid response from server' }))
       if (!response.ok) {
+        if (response.status === 409) {
+          setIsConflict(true)
+        }
         setMessage(payload.error || 'Failed to submit booking')
         return
       }
@@ -283,6 +377,7 @@ function Bookings({ data, role, refresh }: { data: Data; role: Role; refresh: ()
         purpose: '',
         startAt: '',
         endAt: '',
+        expectedAttendees: 50,
       })
       refresh()
     } catch (err: any) {
@@ -305,18 +400,58 @@ function Bookings({ data, role, refresh }: { data: Data; role: Role; refresh: ()
           </p>
         </div>
         {role !== 'Employee' && (
-          <button
-            className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-primary-foreground font-medium shadow hover:opacity-90 transition-opacity"
-            onClick={() => setOpen(!open)}
-          >
-            <Plus className="size-4" /> Create booking
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              className="inline-flex items-center gap-2 rounded-xl border border-primary/30 bg-primary/10 px-3.5 py-2.5 text-xs font-medium text-primary hover:bg-primary/20 transition-colors"
+              onClick={triggerConflictDemo}
+              title="Pre-fill an overlapping slot to test 409 conflict detection"
+            >
+              <Sparkles className="size-3.5" />
+              <span>Simulate Conflict Test</span>
+            </button>
+            <button
+              className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-primary-foreground font-medium shadow hover:opacity-90 transition-opacity"
+              onClick={() => {
+                setOpen(!open)
+                setMessage('')
+                setIsConflict(false)
+              }}
+            >
+              <Plus className="size-4" /> Create booking
+            </button>
+          </div>
         )}
       </div>
 
+      {/* Samridhi Defense - Mathematical Interval Overlap Engine Banner */}
+      <div className="rounded-2xl border border-primary/20 bg-primary/5 p-4 flex flex-col md:flex-row items-start md:items-center justify-between gap-3 text-xs">
+        <div className="space-y-1">
+          <div className="flex items-center gap-2">
+            <span className="font-semibold text-foreground">Samridhi Defense: Mathematical Interval Overlap Engine</span>
+            <span className="rounded-full bg-primary/15 px-2 py-0.5 font-mono text-[10px] text-primary font-bold">
+              PostgreSQL B-Tree Seek
+            </span>
+          </div>
+          <p className="text-muted-foreground">
+            Collision Theorem: <code className="font-mono text-primary font-medium">{"(S_exist < E_req) ∧ (E_exist > S_req)"}</code> enforced on <code className="font-mono">idx_bookings_lookup</code>.
+          </p>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <span className="text-[11px] text-muted-foreground">Capacity bounds & temporal guards active</span>
+        </div>
+      </div>
+
       {open && (
-        <div className="rounded-2xl border border-border bg-card p-6 shadow-sm">
-          <h3 className="text-lg font-semibold mb-4">Request Venue Allocation</h3>
+        <div className="rounded-2xl border border-border bg-card p-6 shadow-sm space-y-4">
+          <div className="flex items-center justify-between border-b border-border pb-3">
+            <h3 className="text-lg font-semibold">Request Venue Allocation</h3>
+            {selectedVenue && (
+              <span className="rounded-full bg-muted px-2.5 py-1 text-xs text-muted-foreground font-mono">
+                Capacity: {selectedVenue.capacity} seats ({selectedVenue.type})
+              </span>
+            )}
+          </div>
+
           <div className="grid gap-4 md:grid-cols-2">
             <label className="text-sm font-medium">
               Venue
@@ -327,7 +462,7 @@ function Bookings({ data, role, refresh }: { data: Data; role: Role; refresh: ()
               >
                 {data.venues.map((v) => (
                   <option key={v._id || v.id} value={v._id || v.id}>
-                    {v.name} ({v.type} - Cap: {v.capacity})
+                    {v.name} ({v.type} - Max Cap: {v.capacity})
                   </option>
                 ))}
               </select>
@@ -362,16 +497,45 @@ function Bookings({ data, role, refresh }: { data: Data; role: Role; refresh: ()
                 onChange={(event) => setForm({ ...form, endAt: event.target.value })}
               />
             </label>
+
+            <label className="text-sm font-medium md:col-span-2">
+              <div className="flex items-center justify-between">
+                <span>Expected Attendees</span>
+                {selectedVenue && (
+                  <span className={`text-xs ${form.expectedAttendees > selectedVenue.capacity ? 'text-destructive font-bold' : 'text-muted-foreground'}`}>
+                    Venue Limit: {selectedVenue.capacity}
+                  </span>
+                )}
+              </div>
+              <input
+                type="number"
+                min="1"
+                max={selectedVenue?.capacity || 1000}
+                className="mt-2 w-full rounded-xl border border-input bg-background p-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                placeholder="e.g. 50"
+                value={form.expectedAttendees}
+                onChange={(event) => setForm({ ...form, expectedAttendees: Number(event.target.value) })}
+              />
+            </label>
           </div>
 
           {message && (
-            <div className="mt-4 flex items-center gap-2 rounded-xl bg-destructive/10 border border-destructive/20 p-3 text-sm text-destructive">
-              <AlertCircle className="size-4 shrink-0" />
-              <span>{message}</span>
+            <div
+              className={`flex items-start gap-2.5 rounded-xl p-3.5 text-sm border ${
+                isConflict
+                  ? 'bg-rose-500/10 border-rose-500/30 text-rose-600 dark:text-rose-400'
+                  : 'bg-destructive/10 border-destructive/20 text-destructive'
+              }`}
+            >
+              <AlertCircle className="size-4 shrink-0 mt-0.5" />
+              <div className="space-y-1">
+                <p className="font-semibold">{isConflict ? 'HTTP 409 Conflict Detected' : 'Validation Error'}</p>
+                <p className="text-xs leading-relaxed">{message}</p>
+              </div>
             </div>
           )}
 
-          <div className="mt-6 flex justify-end gap-3">
+          <div className="mt-6 flex justify-end gap-3 pt-2 border-t border-border">
             <button
               className="rounded-xl border border-border px-4 py-2 text-sm font-medium hover:bg-muted"
               onClick={() => setOpen(false)}
