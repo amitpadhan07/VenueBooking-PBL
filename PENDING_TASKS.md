@@ -31,22 +31,22 @@
 | :--- | :---: | :---: | :--- |
 | **Authentication & RBAC** | 100% | 0% | 🔴 Pending (Dummy role dropdown in UI only) |
 | **User & Employee Management** | 100% | 0% | 🔴 Pending |
-| **Venue Management** | 100% | 0% | 🔴 Pending |
-| **Venue Authority Matrix** | 100% | 0% | 🔴 Pending (Core business rule not implemented) |
-| **Booking & Conflict Engine** | 100% | 0% | 🔴 Pending (No backend time overlap check) |
+| **Venue Management** | 100% | 40% | 🟡 In Progress (Prisma inventory active) |
+| **Venue Authority Matrix** | 100% | 40% | 🟡 In Progress (Relational matrix & seeds seeded) |
+| **Booking & Conflict Engine** | 100% | 85% | 🟢 Substantially Complete (Backend time overlap & transactional safety) |
 | **Approval Workflow** | 100% | 0% | 🔴 Pending |
-| **PostgreSQL Database & Schema** | 90% | 90% | 🟢 Completed (Prisma ORM & PostgreSQL schema initialized and seeded) |
-| **PostgreSQL Transactions & ACID** | 80% | 0% | 🔴 Pending |
-| **Concurrency Control & Row Locks** | 80% | 0% | 🔴 Pending (Simultaneous request handling missing) |
-| **OS Scheduling Simulators (FCFS/Priority/RR)** | 70% | 0% | 🔴 Pending (Dummy placeholder card only) |
-| **Critical Section & Synchronization Demo** | 80% | 0% | 🔴 Pending |
+| **PostgreSQL Database & Schema** | 90% | 100% | 🟢 Completed (Prisma ORM & PostgreSQL schema live on Render) |
+| **PostgreSQL Transactions & ACID** | 80% | 100% | 🟢 Completed (Row-level locking & ACID transactions live) |
+| **Concurrency Control & Row Locks** | 80% | 100% | 🟢 Completed (Pessimistic FOR UPDATE locking active) |
+| **OS Scheduling Simulators (FCFS/Priority/RR)** | 70% | 100% | 🟢 Completed (Interactive FCFS, Priority, RR + Gantt chart) |
+| **Critical Section & Synchronization Demo** | 80% | 50% | 🟡 In Progress (Row-lock mapping to critical section demonstrated) |
 | **Deadlock Simulator (Circular Wait)** | 70% | 0% | 🔴 Pending |
 | **Banker's Algorithm Simulator** | 70% | 0% | 🔴 Pending |
-| **DBMS Academic Concepts & SQL Lab** | 80% | 0% | 🔴 Pending |
-| **In-App Notifications** | 70% | 0% | 🔴 Pending |
-| **Analytics & Reports** | 60% | 0% | 🔴 Pending |
-| **Testing Suite & Concurrency Test** | 60% | 0% | 🔴 Pending |
-| **Frontend Polish & Responsive UI** | 90% | 15% | 🟡 In Progress (Basic layout template present) |
+| **DBMS Academic Concepts & SQL Lab** | 80% | 100% | 🟢 Completed (Live SQL query playground, 3NF schema, ACID breakdown) |
+| **In-App Notifications** | 70% | 60% | 🟡 In Progress (Transactional notification triggers live) |
+| **Analytics & Reports** | 60% | 40% | 🟡 In Progress (Live aggregations in DBMS Lab) |
+| **Testing Suite & Concurrency Test** | 60% | 75% | 🟢 Substantially Complete (Live Promise.all concurrency race test) |
+| **Frontend Polish & Responsive UI** | 90% | 80% | 🟢 Substantially Complete (Responsive workspace with live labs) |
 
 ---
 
@@ -240,7 +240,7 @@ $$\text{Conflict} \iff (S_{\text{exist}} < E_{\text{req}}) \land (E_{\text{exist
 When **Student A** and **Student B** submit requests for the same venue and time slot simultaneously, a naive system will execute two read checks that both return "Available", creating a double booking.
 
 ### 🔨 PostgreSQL Concurrency Strategy Tasks:
-- [ ] **Transactional Booking Implementation (`POST /api/bookings/concurrent-safe`)**:
+- [x] **Transactional Booking Implementation (`POST /api/bookings/concurrent-safe`)**:
   - Use `BEGIN TRANSACTION` with appropriate isolation (`READ COMMITTED` with Row Locking, or `SERIALIZABLE`).
   - Use PostgreSQL pessimistic row locking:
     ```sql
@@ -250,12 +250,12 @@ When **Student A** and **Student B** submit requests for the same venue and time
   - Re-verify availability inside the transaction block.
   - If conflicting booking exists: `ROLLBACK` and return HTTP `409 Conflict` with error message `"Time slot has just been reserved by another user."`
   - If clear: `INSERT INTO bookings (...) VALUES (...)` $\rightarrow$ `COMMIT`.
-- [ ] **ACID Verification Logging**:
+- [x] **ACID Verification Logging**:
   - **Atomicity**: Either booking + notification + audit log all commit, or nothing commits on error.
   - **Consistency**: Database constraints (capacity check, valid status transitions) are never violated.
   - **Isolation**: Concurrent transactions cannot read intermediate uncommitted states.
   - **Durability**: Committed bookings are safely written to WAL and PostgreSQL tables.
-- [ ] **Live Interactive Concurrency Demo Route (`/api/demo/concurrency-test`)**:
+- [x] **Live Interactive Concurrency Demo Route (`/api/demo/concurrency-test`)**:
   - Fires two concurrent asynchronous requests ($Request_A$ and $Request_B$) targeting the exact same venue and time slot via `Promise.all()`.
   - Captures timestamps, transaction IDs, locking delays, and shows that exactly **one succeeds** with HTTP 201 and the **other is rejected** with HTTP 409.
 
@@ -298,20 +298,20 @@ When **Student A** and **Student B** submit requests for the same venue and time
 ### 🔨 Tasks:
 
 ### A. Process Scheduling Simulator (`/os-lab/scheduling`)
-- [ ] **Process Queue Input Builder**:
+- [x] **Process Queue Input Builder**:
   - Allows user to add, edit, remove processes (Process ID $P_i$, Arrival Time $AT$, Burst Time $BT$, Priority).
   - Pre-loaded test cases (Standard textbook scenarios).
-- [ ] **3 Algorithm Implementations**:
+- [x] **3 Algorithm Implementations**:
   1. **FCFS (First-Come, First-Served)**: Order of arrival.
   2. **Priority Scheduling (Non-Preemptive & Preemptive)**: Order of highest priority.
   3. **Round Robin (RR)**: Configurable Time Quantum ($TQ = 2, 3, 4\dots$).
-- [ ] **Output Calculation**:
+- [x] **Output Calculation**:
   - Completion Time ($CT$)
   - Turnaround Time ($TAT = CT - AT$)
   - Waiting Time ($WT = TAT - BT$)
   - Response Time ($RT$)
   - Average Waiting Time & Average Turnaround Time.
-- [ ] **Interactive Visual Gantt Chart**:
+- [x] **Interactive Visual Gantt Chart**:
   - Horizontal timeline representation with colored process blocks and time tick markers.
 
 ### B. Critical Section & Synchronization Module (`/os-lab/synchronization`)
@@ -354,20 +354,20 @@ When **Student A** and **Student B** submit requests for the same venue and time
 ## 9. Phase H: Database Management Systems (DBMS) Academic Lab
 
 ### 🔨 Tasks (`/dbms-lab`):
-- [ ] **Interactive ER Diagram & Relational Schema**:
+- [x] **Interactive ER Diagram & Relational Schema**:
   - Visual representation of Entities: `User`, `Venue`, `Employee`, `VenueAuthority`, `Booking`, `Approval`, `Notification`, `AuditLog`.
   - Cardinality indicators: $1:N$, $N:M$ (resolved via associative tables).
-- [ ] **Normalization Walkthrough**:
+- [x] **Normalization Walkthrough**:
   - Step-by-step breakdown: Unnormalized Form (UNF) $\to$ 1NF $\to$ 2NF $\to$ 3NF / BCNF.
   - Justification of why `venue_authority` is separated from `employees` and `venues`.
-- [ ] **Live SQL Query Playground**:
+- [x] **Live SQL Query Playground**:
   - Interactive SQL executor with sample pre-built queries:
     - **Query 1 (JOIN)**: Join `users + bookings + venues` to list all bookings with student names and venue details.
     - **Query 2 (Authority JOIN)**: Join `employees + venue_authority + venues` to show who can approve which venue.
     - **Query 3 (Aggregations & GROUP BY)**: Count total bookings per venue grouped by status.
     - **Query 4 (Departmental Utilization)**: Total hours booked per department.
     - **Query 5 (Subquery & Overlap)**: Find venues with no bookings on a selected date.
-- [ ] **ACID Properties Visualizer**:
+- [x] **ACID Properties Visualizer**:
   - Interactive walkthrough of a booking transaction explaining Atomicity, Consistency, Isolation, and Durability.
   - PostgreSQL transaction lifecycle: `BEGIN` $\to$ Query $\to$ Lock $\to$ `COMMIT` / `ROLLBACK`.
 
