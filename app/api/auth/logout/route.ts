@@ -9,19 +9,23 @@ export async function POST(request: NextRequest) {
     const authUser = await getAuthUser(request)
 
     if (authUser) {
-      await prisma.auditLog.create({
-        data: {
-          user_id: authUser.userId,
-          action: 'LOGOUT',
-          entity_type: 'USER',
-          entity_id: authUser.userId,
-          details: JSON.stringify({
+      await prisma.$executeRaw`
+        INSERT INTO audit_logs (log_id, user_id, action, entity_type, entity_id, details, ip_address, created_at)
+        VALUES (
+          gen_random_uuid(),
+          ${authUser.userId},
+          'LOGOUT',
+          'USER',
+          ${authUser.userId},
+          ${JSON.stringify({
             email: authUser.email,
             role: authUser.role,
             timestamp: new Date().toISOString(),
-          }),
-        },
-      })
+          })}::jsonb,
+          ${request.headers.get('x-forwarded-for') || '127.0.0.1'},
+          NOW()
+        );
+      `
     }
 
     const response = NextResponse.json({

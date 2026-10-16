@@ -23,6 +23,8 @@ import {
   FileCode,
   ArrowRight,
   Lock,
+  Copy,
+  Check,
 } from 'lucide-react'
 
 const VIVA_QUESTIONS = [
@@ -48,6 +50,167 @@ const VIVA_QUESTIONS = [
   },
 ]
 
+const RAW_SCHEMA_SQL = `-- ==============================================================================
+-- 📋 SMART VENUE BOOKING & MANAGEMENT SYSTEM - DATABASE SCHEMA (PostgreSQL 16+)
+-- PBL Theme: An OS and DBMS Based Approach for Concurrent Venue Allocation & Approval
+-- Database: PostgreSQL (Render Cloud Hosted: venuedesk)
+-- 8 Normalized Tables in 3NF / BCNF with ACID Locking
+-- ==============================================================================
+
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+
+-- Custom PostgreSQL ENUM Types
+CREATE TYPE "Role" AS ENUM ('STUDENT', 'EMPLOYEE', 'ADMIN', 'FACULTY');
+CREATE TYPE "VenueStatus" AS ENUM ('ACTIVE', 'MAINTENANCE', 'INACTIVE');
+CREATE TYPE "AuthorityStatus" AS ENUM ('ACTIVE', 'REVOKED');
+CREATE TYPE "BookingStatus" AS ENUM ('PENDING', 'APPROVED', 'REJECTED', 'CANCELLED');
+CREATE TYPE "ApprovalAction" AS ENUM ('APPROVED', 'REJECTED');
+
+-- TABLE 1: users (Master directory of authenticated campus entities)
+CREATE TABLE "users" (
+    "user_id" TEXT NOT NULL DEFAULT gen_random_uuid()::text,
+    "name" VARCHAR(100) NOT NULL,
+    "email" VARCHAR(150) NOT NULL,
+    "password_hash" VARCHAR(255) NOT NULL,
+    "role" "Role" NOT NULL DEFAULT 'STUDENT',
+    "department" VARCHAR(100),
+    "phone" VARCHAR(20),
+    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "users_pkey" PRIMARY KEY ("user_id"),
+    CONSTRAINT "users_email_key" UNIQUE ("email")
+);
+
+-- TABLE 2: venues (Physical campus facilities available for event allocation)
+CREATE TABLE "venues" (
+    "venue_id" TEXT NOT NULL DEFAULT gen_random_uuid()::text,
+    "venue_name" VARCHAR(120) NOT NULL,
+    "location" VARCHAR(150) NOT NULL,
+    "capacity" INTEGER NOT NULL,
+    "venue_type" VARCHAR(50) NOT NULL,
+    "description" TEXT,
+    "status" "VenueStatus" NOT NULL DEFAULT 'ACTIVE',
+    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "venues_pkey" PRIMARY KEY ("venue_id"),
+    CONSTRAINT "venues_venue_name_key" UNIQUE ("venue_name"),
+    CONSTRAINT "venues_capacity_positive_check" CHECK (capacity > 0)
+);
+
+-- TABLE 3: employees (1:1 extension of users for campus staff / facility managers)
+CREATE TABLE "employees" (
+    "employee_id" TEXT NOT NULL DEFAULT gen_random_uuid()::text,
+    "user_id" TEXT NOT NULL,
+    "employee_code" VARCHAR(50) NOT NULL,
+    "designation" VARCHAR(100) NOT NULL,
+    "department" VARCHAR(100) NOT NULL,
+    "status" VARCHAR(20) NOT NULL DEFAULT 'ACTIVE',
+    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "employees_pkey" PRIMARY KEY ("employee_id"),
+    CONSTRAINT "employees_user_id_key" UNIQUE ("user_id"),
+    CONSTRAINT "employees_employee_code_key" UNIQUE ("employee_code"),
+    CONSTRAINT "employees_user_id_fkey" FOREIGN KEY ("user_id") 
+        REFERENCES "users"("user_id") ON DELETE CASCADE ON UPDATE CASCADE
+);
+
+-- TABLE 4: venue_authority (Associative table resolving N:M staff-to-venue authority)
+CREATE TABLE "venue_authority" (
+    "authority_id" TEXT NOT NULL DEFAULT gen_random_uuid()::text,
+    "employee_id" TEXT NOT NULL,
+    "venue_id" TEXT NOT NULL,
+    "assigned_by" TEXT NOT NULL,
+    "status" "AuthorityStatus" NOT NULL DEFAULT 'ACTIVE',
+    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "venue_authority_pkey" PRIMARY KEY ("authority_id"),
+    CONSTRAINT "venue_authority_employee_id_venue_id_key" UNIQUE ("employee_id", "venue_id"),
+    CONSTRAINT "venue_authority_employee_id_fkey" FOREIGN KEY ("employee_id") 
+        REFERENCES "employees"("employee_id") ON DELETE CASCADE ON UPDATE CASCADE,
+    CONSTRAINT "venue_authority_venue_id_fkey" FOREIGN KEY ("venue_id") 
+        REFERENCES "venues"("venue_id") ON DELETE CASCADE ON UPDATE CASCADE,
+    CONSTRAINT "venue_authority_assigned_by_fkey" FOREIGN KEY ("assigned_by") 
+        REFERENCES "users"("user_id") ON DELETE RESTRICT ON UPDATE CASCADE
+);
+
+-- TABLE 5: bookings (Critical Section resource records representing temporal locks)
+CREATE TABLE "bookings" (
+    "booking_id" TEXT NOT NULL DEFAULT gen_random_uuid()::text,
+    "user_id" TEXT NOT NULL,
+    "venue_id" TEXT NOT NULL,
+    "event_name" VARCHAR(150) NOT NULL,
+    "event_date" DATE NOT NULL,
+    "start_time" VARCHAR(10) NOT NULL,
+    "end_time" VARCHAR(10) NOT NULL,
+    "expected_attendees" INTEGER NOT NULL,
+    "status" "BookingStatus" NOT NULL DEFAULT 'PENDING',
+    "rejection_reason" TEXT,
+    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "bookings_pkey" PRIMARY KEY ("booking_id"),
+    CONSTRAINT "bookings_user_id_fkey" FOREIGN KEY ("user_id") 
+        REFERENCES "users"("user_id") ON DELETE CASCADE ON UPDATE CASCADE,
+    CONSTRAINT "bookings_venue_id_fkey" FOREIGN KEY ("venue_id") 
+        REFERENCES "venues"("venue_id") ON DELETE CASCADE ON UPDATE CASCADE,
+    CONSTRAINT "bookings_expected_attendees_check" CHECK (expected_attendees > 0),
+    CONSTRAINT "bookings_time_order_check" CHECK (start_time < end_time)
+);
+
+-- TABLE 6: approvals (Two-Phase Approval workflow audit entries)
+CREATE TABLE "approvals" (
+    "approval_id" TEXT NOT NULL DEFAULT gen_random_uuid()::text,
+    "booking_id" TEXT NOT NULL,
+    "employee_id" TEXT NOT NULL,
+    "action" "ApprovalAction" NOT NULL,
+    "remarks" TEXT,
+    "action_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "approvals_pkey" PRIMARY KEY ("approval_id"),
+    CONSTRAINT "approvals_booking_id_fkey" FOREIGN KEY ("booking_id") 
+        REFERENCES "bookings"("booking_id") ON DELETE CASCADE ON UPDATE CASCADE,
+    CONSTRAINT "approvals_employee_id_fkey" FOREIGN KEY ("employee_id") 
+        REFERENCES "employees"("employee_id") ON DELETE CASCADE ON UPDATE CASCADE
+);
+
+-- TABLE 7: notifications (Event-driven asynchronous alert records)
+CREATE TABLE "notifications" (
+    "notification_id" TEXT NOT NULL DEFAULT gen_random_uuid()::text,
+    "user_id" TEXT NOT NULL,
+    "booking_id" TEXT,
+    "title" VARCHAR(150) NOT NULL,
+    "message" TEXT NOT NULL,
+    "notification_type" VARCHAR(50) NOT NULL,
+    "is_read" BOOLEAN NOT NULL DEFAULT false,
+    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "notifications_pkey" PRIMARY KEY ("notification_id"),
+    CONSTRAINT "notifications_user_id_fkey" FOREIGN KEY ("user_id") 
+        REFERENCES "users"("user_id") ON DELETE CASCADE ON UPDATE CASCADE,
+    CONSTRAINT "notifications_booking_id_fkey" FOREIGN KEY ("booking_id") 
+        REFERENCES "bookings"("booking_id") ON DELETE SET NULL ON UPDATE CASCADE
+);
+
+-- TABLE 8: audit_logs (Tamper-evident system ledger capturing state mutations)
+CREATE TABLE "audit_logs" (
+    "log_id" TEXT NOT NULL DEFAULT gen_random_uuid()::text,
+    "user_id" TEXT,
+    "action" VARCHAR(100) NOT NULL,
+    "entity_type" VARCHAR(50) NOT NULL,
+    "entity_id" VARCHAR(100) NOT NULL,
+    "details" TEXT,
+    "ip_address" VARCHAR(45),
+    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "audit_logs_pkey" PRIMARY KEY ("log_id"),
+    CONSTRAINT "audit_logs_user_id_fkey" FOREIGN KEY ("user_id") 
+        REFERENCES "users"("user_id") ON DELETE SET NULL ON UPDATE CASCADE
+);
+
+-- B-TREE COMPOSITE INDEXES
+CREATE INDEX "idx_bookings_lookup" ON "bookings"("venue_id", "event_date", "status", "start_time", "end_time");
+CREATE INDEX "idx_user_bookings" ON "bookings"("user_id", "status");
+CREATE INDEX "idx_venue_authority" ON "venue_authority"("employee_id", "venue_id", "status");
+CREATE INDEX "idx_approvals_booking" ON "approvals"("booking_id");
+CREATE INDEX "idx_notifications_user" ON "notifications"("user_id", "is_read");`
+
 export default function DBMSAcademicLab() {
   const [selectedQueryId, setSelectedQueryId] = useState<string>(PRESET_QUERIES[0].id)
   const [customSql, setCustomSql] = useState<string>(PRESET_QUERIES[0].sql)
@@ -62,8 +225,19 @@ export default function DBMSAcademicLab() {
   // Viva accordion state
   const [expandedViva, setExpandedViva] = useState<number | null>(0)
 
+  // SQL Schema viewer state
+  const [showSchemaSql, setShowSchemaSql] = useState<boolean>(false)
+  const [copiedSql, setCopiedSql] = useState<boolean>(false)
+  const [schemaTab, setSchemaTab] = useState<'tables' | 'constraints' | 'indexes' | 'raw_sql'>('tables')
+
   // Script step highlight
   const [activeStep, setActiveStep] = useState<number>(1)
+
+  const handleCopySql = () => {
+    navigator.clipboard.writeText(RAW_SCHEMA_SQL)
+    setCopiedSql(true)
+    setTimeout(() => setCopiedSql(false), 2000)
+  }
 
   const handleSelectPreset = (id: string) => {
     setSelectedQueryId(id)
@@ -587,6 +761,258 @@ export default function DBMSAcademicLab() {
             </div>
           </div>
         </div>
+      </div>
+
+      {/* Section: PostgreSQL Relational Database Schema in Pure SQL (schema.sql) */}
+      <div className="rounded-2xl border border-border bg-card p-6 shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-4 border-b border-border pb-4 mb-4">
+          <div className="flex items-center gap-2">
+            <FileCode className="size-5 text-primary" />
+            <div>
+              <h2 className="text-lg font-semibold">PostgreSQL Relational Database Schema (schema.sql)</h2>
+              <p className="text-xs text-muted-foreground">
+                Official SQL DDL specification deployed on PostgreSQL 16 (Render Cloud) with 3NF decomposition, CHECK constraints, and indexes.
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleCopySql}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-muted/40 px-3 py-1.5 text-xs font-medium hover:bg-muted transition-colors text-foreground"
+            >
+              {copiedSql ? (
+                <>
+                  <Check className="size-3.5 text-emerald-500" />
+                  <span className="text-emerald-500 font-semibold">Copied SQL!</span>
+                </>
+              ) : (
+                <>
+                  <Copy className="size-3.5 text-muted-foreground" />
+                  <span>Copy schema.sql</span>
+                </>
+              )}
+            </button>
+            <button
+              onClick={() => setShowSchemaSql(!showSchemaSql)}
+              className="inline-flex items-center gap-1 rounded-lg bg-primary/10 px-3 py-1.5 text-xs font-semibold text-primary hover:bg-primary/20 transition-colors"
+            >
+              {showSchemaSql ? 'Hide SQL Code' : 'View SQL Code'}
+              {showSchemaSql ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}
+            </button>
+          </div>
+        </div>
+
+        {/* Tab Navigation */}
+        <div className="flex items-center gap-2 mb-4 border-b border-border/50 pb-2">
+          {(
+            [
+              { id: 'tables', label: '8 Normalized Tables' },
+              { id: 'constraints', label: 'Integrity Constraints' },
+              { id: 'indexes', label: 'B-Tree Indexes' },
+              { id: 'raw_sql', label: 'Raw schema.sql File' },
+            ] as const
+          ).map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => {
+                setSchemaTab(tab.id)
+                setShowSchemaSql(true)
+              }}
+              className={`rounded-lg px-3 py-1 text-xs font-medium transition-colors ${
+                schemaTab === tab.id
+                  ? 'bg-primary text-primary-foreground font-semibold shadow-xs'
+                  : 'text-muted-foreground hover:text-foreground hover:bg-muted/40'
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+
+        {showSchemaSql && (
+          <div className="mt-2">
+            {schemaTab === 'tables' && (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
+                <div className="rounded-xl border border-border bg-muted/20 p-3.5">
+                  <div className="flex items-center justify-between font-mono font-bold text-foreground">
+                    <span>users</span>
+                    <span className="text-[10px] text-primary bg-primary/10 px-1.5 py-0.5 rounded">Entity Table</span>
+                  </div>
+                  <p className="text-[11px] text-muted-foreground mt-1">Master student, faculty, and administrator identities.</p>
+                  <div className="mt-2 text-[11px] font-mono text-muted-foreground space-y-0.5 border-t border-border/50 pt-2">
+                    <div>🔑 <span className="text-foreground">user_id</span>: UUID PK</div>
+                    <div>🏷️ <span className="text-foreground">email</span>: VARCHAR UNIQUE</div>
+                    <div>🛡️ <span className="text-foreground">role</span>: &quot;Role&quot; ENUM</div>
+                  </div>
+                </div>
+
+                <div className="rounded-xl border border-border bg-muted/20 p-3.5">
+                  <div className="flex items-center justify-between font-mono font-bold text-foreground">
+                    <span>venues</span>
+                    <span className="text-[10px] text-emerald-500 bg-emerald-500/10 px-1.5 py-0.5 rounded">Resource</span>
+                  </div>
+                  <p className="text-[11px] text-muted-foreground mt-1">Auditoriums, seminar halls, and laboratory venues.</p>
+                  <div className="mt-2 text-[11px] font-mono text-muted-foreground space-y-0.5 border-t border-border/50 pt-2">
+                    <div>🔑 <span className="text-foreground">venue_id</span>: UUID PK</div>
+                    <div>🏷️ <span className="text-foreground">venue_name</span>: VARCHAR UNIQUE</div>
+                    <div>📏 <span className="text-foreground">capacity</span>: CHECK &gt; 0</div>
+                  </div>
+                </div>
+
+                <div className="rounded-xl border border-border bg-muted/20 p-3.5">
+                  <div className="flex items-center justify-between font-mono font-bold text-foreground">
+                    <span>employees</span>
+                    <span className="text-[10px] text-blue-500 bg-blue-500/10 px-1.5 py-0.5 rounded">1:1 Extension</span>
+                  </div>
+                  <p className="text-[11px] text-muted-foreground mt-1">Faculty &amp; staff profiles with designation &amp; code.</p>
+                  <div className="mt-2 text-[11px] font-mono text-muted-foreground space-y-0.5 border-t border-border/50 pt-2">
+                    <div>🔑 <span className="text-foreground">employee_id</span>: UUID PK</div>
+                    <div>🔗 <span className="text-foreground">user_id</span>: UNIQUE FK (users)</div>
+                    <div>🏷️ <span className="text-foreground">employee_code</span>: VARCHAR UNIQUE</div>
+                  </div>
+                </div>
+
+                <div className="rounded-xl border border-border bg-muted/20 p-3.5">
+                  <div className="flex items-center justify-between font-mono font-bold text-foreground">
+                    <span>venue_authority</span>
+                    <span className="text-[10px] text-purple-500 bg-purple-500/10 px-1.5 py-0.5 rounded">N:M Resolving</span>
+                  </div>
+                  <p className="text-[11px] text-muted-foreground mt-1">Delegated approval permissions for facility staff.</p>
+                  <div className="mt-2 text-[11px] font-mono text-muted-foreground space-y-0.5 border-t border-border/50 pt-2">
+                    <div>🔑 <span className="text-foreground">authority_id</span>: UUID PK</div>
+                    <div>🔗 <span className="text-foreground">employee_id</span>: FK (employees)</div>
+                    <div>🔗 <span className="text-foreground">venue_id</span>: FK (venues)</div>
+                    <div>🔒 <span className="text-foreground">UNIQUE</span>: (employee_id, venue_id)</div>
+                  </div>
+                </div>
+
+                <div className="rounded-xl border border-border bg-muted/20 p-3.5">
+                  <div className="flex items-center justify-between font-mono font-bold text-foreground">
+                    <span>bookings</span>
+                    <span className="text-[10px] text-amber-500 bg-amber-500/10 px-1.5 py-0.5 rounded">Critical Section</span>
+                  </div>
+                  <p className="text-[11px] text-muted-foreground mt-1">Temporal slot allocations protected by row mutex.</p>
+                  <div className="mt-2 text-[11px] font-mono text-muted-foreground space-y-0.5 border-t border-border/50 pt-2">
+                    <div>🔑 <span className="text-foreground">booking_id</span>: UUID PK</div>
+                    <div>🔗 <span className="text-foreground">venue_id, user_id</span>: FKs</div>
+                    <div>⏱️ <span className="text-foreground">CHECK</span>: start_time &lt; end_time</div>
+                    <div>⚡ <span className="text-foreground">INDEX</span>: venue, date, status, times</div>
+                  </div>
+                </div>
+
+                <div className="rounded-xl border border-border bg-muted/20 p-3.5">
+                  <div className="flex items-center justify-between font-mono font-bold text-foreground">
+                    <span>approvals</span>
+                    <span className="text-[10px] text-indigo-500 bg-indigo-500/10 px-1.5 py-0.5 rounded">Workflow</span>
+                  </div>
+                  <p className="text-[11px] text-muted-foreground mt-1">Audit trail of manager approvals or rejections.</p>
+                  <div className="mt-2 text-[11px] font-mono text-muted-foreground space-y-0.5 border-t border-border/50 pt-2">
+                    <div>🔑 <span className="text-foreground">approval_id</span>: UUID PK</div>
+                    <div>🔗 <span className="text-foreground">booking_id</span>: FK CASCADE</div>
+                    <div>🔗 <span className="text-foreground">employee_id</span>: FK CASCADE</div>
+                  </div>
+                </div>
+
+                <div className="rounded-xl border border-border bg-muted/20 p-3.5">
+                  <div className="flex items-center justify-between font-mono font-bold text-foreground">
+                    <span>notifications</span>
+                    <span className="text-[10px] text-cyan-500 bg-cyan-500/10 px-1.5 py-0.5 rounded">Alert Ledger</span>
+                  </div>
+                  <p className="text-[11px] text-muted-foreground mt-1">Event-driven user alerts with read state tracking.</p>
+                  <div className="mt-2 text-[11px] font-mono text-muted-foreground space-y-0.5 border-t border-border/50 pt-2">
+                    <div>🔑 <span className="text-foreground">notification_id</span>: UUID PK</div>
+                    <div>🔗 <span className="text-foreground">user_id</span>: FK (users)</div>
+                    <div>⚡ <span className="text-foreground">INDEX</span>: (user_id, is_read)</div>
+                  </div>
+                </div>
+
+                <div className="rounded-xl border border-border bg-muted/20 p-3.5">
+                  <div className="flex items-center justify-between font-mono font-bold text-foreground">
+                    <span>audit_logs</span>
+                    <span className="text-[10px] text-rose-500 bg-rose-500/10 px-1.5 py-0.5 rounded">Security Ledger</span>
+                  </div>
+                  <p className="text-[11px] text-muted-foreground mt-1">Tamper-evident record of all system state transitions.</p>
+                  <div className="mt-2 text-[11px] font-mono text-muted-foreground space-y-0.5 border-t border-border/50 pt-2">
+                    <div>🔑 <span className="text-foreground">log_id</span>: UUID PK</div>
+                    <div>🔗 <span className="text-foreground">user_id</span>: FK SET NULL</div>
+                    <div>📜 <span className="text-foreground">details</span>: TEXT payload</div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {schemaTab === 'constraints' && (
+              <div className="space-y-3 text-xs">
+                <div className="rounded-xl border border-border bg-muted/20 p-4">
+                  <h4 className="font-semibold text-primary mb-1">Check Constraints (Domain Integrity)</h4>
+                  <ul className="space-y-1.5 text-muted-foreground font-mono text-[11px]">
+                    <li>• <code className="text-foreground">venues_capacity_positive_check</code>: <span className="text-emerald-500 font-semibold">CHECK (capacity &gt; 0)</span> — Ensures no venue has negative or zero seating capacity.</li>
+                    <li>• <code className="text-foreground">bookings_expected_attendees_check</code>: <span className="text-emerald-500 font-semibold">CHECK (expected_attendees &gt; 0)</span> — Validates event attendee count.</li>
+                    <li>• <code className="text-foreground">bookings_time_order_check</code>: <span className="text-emerald-500 font-semibold">CHECK (start_time &lt; end_time)</span> — Enforces temporal validity.</li>
+                  </ul>
+                </div>
+
+                <div className="rounded-xl border border-border bg-muted/20 p-4">
+                  <h4 className="font-semibold text-primary mb-1">Foreign Keys &amp; Referential Integrity</h4>
+                  <ul className="space-y-1.5 text-muted-foreground font-mono text-[11px]">
+                    <li>• <code className="text-foreground">employees.user_id</code> ➔ <code className="text-foreground">users.user_id</code> (ON DELETE CASCADE, ON UPDATE CASCADE) [1:1 mapping]</li>
+                    <li>• <code className="text-foreground">venue_authority.(employee_id, venue_id)</code> ➔ Foreign keys cascading to parent tables with composite UNIQUE constraint.</li>
+                    <li>• <code className="text-foreground">bookings.(user_id, venue_id)</code> ➔ Relational integrity guaranteed with CASCADE deletion.</li>
+                    <li>• <code className="text-foreground">notifications.booking_id</code> ➔ SET NULL on booking deletion to preserve user historical alerts.</li>
+                    <li>• <code className="text-foreground">audit_logs.user_id</code> ➔ SET NULL to ensure permanent audit retention even if a user account is deleted.</li>
+                  </ul>
+                </div>
+              </div>
+            )}
+
+            {schemaTab === 'indexes' && (
+              <div className="space-y-3 text-xs">
+                <div className="rounded-xl border border-border bg-muted/20 p-4">
+                  <h4 className="font-semibold text-primary mb-2">PostgreSQL B-Tree Performance Indexes</h4>
+                  <div className="space-y-3">
+                    <div className="rounded-lg bg-background p-3 border border-border">
+                      <div className="font-mono font-bold text-foreground">idx_bookings_lookup</div>
+                      <code className="text-[11px] text-primary block mt-1">
+                        ON bookings(venue_id, event_date, status, start_time, end_time);
+                      </code>
+                      <p className="text-[11px] text-muted-foreground mt-1">
+                        Optimizes the Critical Section interval overlap evaluation: <code className="font-mono">(S_exist &lt; E_req) AND (E_exist &gt; S_req)</code>. Eliminates sequential table scans.
+                      </p>
+                    </div>
+
+                    <div className="rounded-lg bg-background p-3 border border-border">
+                      <div className="font-mono font-bold text-foreground">idx_venue_authority</div>
+                      <code className="text-[11px] text-primary block mt-1">
+                        ON venue_authority(employee_id, venue_id, status);
+                      </code>
+                      <p className="text-[11px] text-muted-foreground mt-1">
+                        Accelerates Two-Phase Approval permission checks when a department employee verifies their authorization for a specific venue.
+                      </p>
+                    </div>
+
+                    <div className="rounded-lg bg-background p-3 border border-border">
+                      <div className="font-mono font-bold text-foreground">idx_user_bookings &amp; idx_notifications_user</div>
+                      <code className="text-[11px] text-primary block mt-1">
+                        ON bookings(user_id, status); ON notifications(user_id, is_read);
+                      </code>
+                      <p className="text-[11px] text-muted-foreground mt-1">
+                        Ensures instantaneous dashboard loading for personal student booking histories and unread notification badges.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {schemaTab === 'raw_sql' && (
+              <div className="relative">
+                <pre className="max-h-96 overflow-y-auto rounded-xl bg-background border border-border p-4 text-[11px] font-mono text-muted-foreground leading-relaxed">
+                  {RAW_SCHEMA_SQL}
+                </pre>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Section 4: ACID Transactions & Concurrency Contract */}

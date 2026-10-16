@@ -47,89 +47,115 @@ async function runLavanyaDefenseSuite() {
     }
   }
 
+  // Helper to query table row count using raw SQL
+  async function getTableCount(table: string): Promise<number> {
+    const res = await prisma.$queryRawUnsafe<Array<{ count: string | number | bigint }>>(
+      `SELECT COUNT(*) AS count FROM ${table};`
+    )
+    return Number(res[0]?.count ?? 0)
+  }
+
   try {
-    // TEST 1: 8-Table Relational Schema & Cardinalities
-    console.log('--- TEST 1: 8-Table Relational Schema & Architecture ---')
-    const userCount = await prisma.user.count()
-    const venueCount = await prisma.venue.count()
-    const employeeCount = await prisma.employee.count()
-    const authorityCount = await prisma.venueAuthority.count()
-    const bookingCount = await prisma.booking.count()
-    const approvalCount = await prisma.approval.count()
-    const notificationCount = await prisma.notification.count()
-    const auditCount = await prisma.auditLog.count()
+    // TEST 1: 8-Table Relational Schema & Cardinalities via pure SQL
+    console.log('--- TEST 1: 8-Table Relational Schema & Architecture (Pure SQL) ---')
+    const userCount = await getTableCount('users')
+    const venueCount = await getTableCount('venues')
+    const employeeCount = await getTableCount('employees')
+    const authorityCount = await getTableCount('venue_authority')
+    const bookingCount = await getTableCount('bookings')
+    const approvalCount = await getTableCount('approvals')
+    const notificationCount = await getTableCount('notifications')
+    const auditCount = await getTableCount('audit_logs')
 
     assert(
       userCount >= 0 && venueCount >= 0 && employeeCount >= 0 && authorityCount >= 0 &&
       bookingCount >= 0 && approvalCount >= 0 && notificationCount >= 0 && auditCount >= 0,
-      'All 8 normalized relational tables are accessible on PostgreSQL (Render)',
+      'All 8 normalized relational tables are accessible on PostgreSQL (Render via Raw SQL)',
       `Counts: users=${userCount}, venues=${venueCount}, employees=${employeeCount}, venue_authority=${authorityCount}, bookings=${bookingCount}, approvals=${approvalCount}, notifications=${notificationCount}, audit_logs=${auditCount}`
     )
 
-    // Verify 1:1 user <-> employee cardinality
-    const empWithUser = await prisma.employee.findFirst({
-      include: { user: true },
-    })
-    if (empWithUser) {
+    // Verify 1:1 user <-> employee cardinality via SQL INNER JOIN
+    const empRows = await prisma.$queryRaw<Array<{
+      employee_id: string
+      employee_code: string
+      user_id: string
+      user_name: string
+    }>>`
+      SELECT e.employee_id, e.employee_code, u.user_id, u.name AS user_name
+      FROM employees e
+      INNER JOIN users u ON e.user_id = u.user_id
+      LIMIT 1;
+    `
+    if (empRows.length > 0) {
       assert(
-        empWithUser.user !== null && empWithUser.user.user_id === empWithUser.user_id,
-        '1:1 Cardinality strictly verified: employees.user_id (UNIQUE FK) ↔ users.user_id',
-        `Employee ${empWithUser.employee_code} mapped to User ${empWithUser.user.name}`
+        empRows[0].user_id !== null,
+        '1:1 Cardinality strictly verified via SQL: employees.user_id (UNIQUE FK) ↔ users.user_id',
+        `Employee ${empRows[0].employee_code} mapped to User ${empRows[0].user_name}`
       )
     } else {
       assert(true, '1:1 Cardinality verified via schema unique constraint')
     }
 
-    // Verify N:M employees <-> venues resolution via associative table venue_authority
-    const authority = await prisma.venueAuthority.findFirst({
-      include: { employee: true, venue: true },
-    })
-    if (authority) {
+    // Verify N:M employees <-> venues resolution via associative table venue_authority via SQL JOIN
+    const authorityRows = await prisma.$queryRaw<Array<{
+      authority_id: string
+      employee_code: string
+      venue_name: string
+    }>>`
+      SELECT va.authority_id, e.employee_code, v.venue_name
+      FROM venue_authority va
+      INNER JOIN employees e ON va.employee_id = e.employee_id
+      INNER JOIN venues v ON va.venue_id = v.venue_id
+      LIMIT 1;
+    `
+    if (authorityRows.length > 0) {
       assert(
-        authority.employee !== null && authority.venue !== null,
-        'N:M Cardinality resolved in 3NF via associative table venue_authority',
-        `Staff [${authority.employee.employee_code}] assigned to [${authority.venue.venue_name}]`
+        authorityRows[0].employee_code !== null && authorityRows[0].venue_name !== null,
+        'N:M Cardinality resolved in 3NF via associative table venue_authority (Raw SQL)',
+        `Staff [${authorityRows[0].employee_code}] assigned to [${authorityRows[0].venue_name}]`
       )
     } else {
       assert(true, 'N:M Cardinality structure active in schema')
     }
 
-    // TEST 2: 3NF Normalization & Elimination of Anomalies
-    console.log('\n--- TEST 2: 3NF Normalization & Elimination of Anomalies ---')
-    // 2.1 Insertion Anomaly Test: Can we add a venue without an employee?
+    // TEST 2: 3NF Normalization & Elimination of Anomalies (via Raw SQL)
+    console.log('\n--- TEST 2: 3NF Normalization & Elimination of Anomalies (Pure SQL) ---')
+    // 2.1 Insertion Anomaly Test: Can we add a venue without an employee? (SQL INSERT)
     const testVenueName = `Lab_Audit_Temp_${Date.now()}`
-    const tempVenue = await prisma.venue.create({
-      data: {
-        venue_name: testVenueName,
-        location: 'Wing B Academic Block',
-        capacity: 120,
-        venue_type: 'SEMINAR_HALL',
-        status: VenueStatus.ACTIVE,
-      },
-    })
+    const tempVenueRows = await prisma.$queryRaw<Array<{ venue_id: string; venue_name: string }>>`
+      INSERT INTO venues (venue_id, venue_name, location, capacity, venue_type, status)
+      VALUES (gen_random_uuid(), ${testVenueName}, 'Wing B Academic Block', 120, 'SEMINAR_HALL', 'ACTIVE'::"VenueStatus")
+      RETURNING venue_id, venue_name;
+    `
+    const tempVenue = tempVenueRows[0]
     assert(
-      tempVenue.venue_id !== null,
-      'Eliminated Insertion Anomaly: New venue created independently without requiring staff assignment',
+      tempVenue && tempVenue.venue_id !== null,
+      'Eliminated Insertion Anomaly: New venue created independently via SQL INSERT without requiring staff assignment',
       `Venue: ${tempVenue.venue_name} (ID: ${tempVenue.venue_id})`
     )
 
-    // 2.2 Update Anomaly Test: Updating capacity updates exactly 1 single tuple
-    const updatedVenue = await prisma.venue.update({
-      where: { venue_id: tempVenue.venue_id },
-      data: { capacity: 150 },
-    })
+    // 2.2 Update Anomaly Test: Updating capacity updates exactly 1 single tuple (SQL UPDATE)
+    const updatedRows = await prisma.$queryRaw<Array<{ capacity: number }>>`
+      UPDATE venues
+      SET capacity = 150
+      WHERE venue_id = ${tempVenue.venue_id}
+      RETURNING capacity;
+    `
+    const updatedVenue = updatedRows[0]
     assert(
-      updatedVenue.capacity === 150,
-      'Eliminated Update Anomaly: Modifying facility capacity updates exactly 1 record in venues table',
-      `Updated Capacity: ${updatedVenue.capacity}`
+      updatedVenue && updatedVenue.capacity === 150,
+      'Eliminated Update Anomaly: Modifying facility capacity updates exactly 1 record via SQL UPDATE',
+      `Updated Capacity: ${updatedVenue?.capacity}`
     )
 
-    // 2.3 Deletion Anomaly Cleanup: Removing temp venue doesn't affect employee table
-    await prisma.venue.delete({ where: { venue_id: tempVenue.venue_id } })
-    const finalEmpCount = await prisma.employee.count()
+    // 2.3 Deletion Anomaly Cleanup: Removing temp venue doesn't affect employee table (SQL DELETE)
+    await prisma.$executeRaw`
+      DELETE FROM venues WHERE venue_id = ${tempVenue.venue_id};
+    `
+    const finalEmpCount = await getTableCount('employees')
     assert(
       finalEmpCount === employeeCount,
-      'Eliminated Deletion Anomaly: Deleting venue preserved employee table with zero collateral loss',
+      'Eliminated Deletion Anomaly: Deleting venue via SQL DELETE preserved employee table with zero collateral loss',
       `Staff count unaffected: ${finalEmpCount}`
     )
 
@@ -198,8 +224,11 @@ async function runLavanyaDefenseSuite() {
     )
 
     // TEST 6: PostgreSQL ACID Pessimistic Row Lock (SELECT ... FOR UPDATE)
-    console.log('\n--- TEST 6: PostgreSQL ACID Transaction & Row Lock Serialization ---')
-    const activeVenue = await prisma.venue.findFirst({ where: { status: 'ACTIVE' } })
+    console.log('\n--- TEST 6: PostgreSQL ACID Transaction & Row Lock Serialization (Pure SQL) ---')
+    const activeVenues = await prisma.$queryRaw<Array<{ venue_id: string; venue_name: string }>>`
+      SELECT venue_id, venue_name FROM venues WHERE status = 'ACTIVE'::"VenueStatus" LIMIT 1;
+    `
+    const activeVenue = activeVenues[0]
     if (activeVenue) {
       // Test interactive transaction with row lock
       const txResult = await prisma.$transaction(async (tx) => {
@@ -219,28 +248,33 @@ async function runLavanyaDefenseSuite() {
       assert(true, 'Row locking query pattern validated')
     }
 
-    // TEST 7: Atomicity Rollback Guarantee
-    console.log('\n--- TEST 7: ACID Atomicity & Rollback Integrity ---')
-    const sampleUser = await prisma.user.findFirst()
-    const sampleVenue = await prisma.venue.findFirst()
-    const initialBookingCount = await prisma.booking.count()
+    // TEST 7: Atomicity Rollback Guarantee via Pure SQL
+    console.log('\n--- TEST 7: ACID Atomicity & Rollback Integrity (Pure SQL) ---')
+    const sampleUsers = await prisma.$queryRaw<Array<{ user_id: string }>>`SELECT user_id FROM users LIMIT 1;`
+    const sampleVenues = await prisma.$queryRaw<Array<{ venue_id: string }>>`SELECT venue_id FROM venues LIMIT 1;`
+    const initialBookingCount = await getTableCount('bookings')
     let errorCaught = false
 
     try {
       await prisma.$transaction(async (tx) => {
-        // Create an uncommitted booking using tx
-        await tx.booking.create({
-          data: {
-            user_id: sampleUser?.user_id || '',
-            venue_id: sampleVenue?.venue_id || '',
-            event_name: 'Intentional Rollback Test',
-            event_date: new Date(),
-            start_time: '19:00',
-            end_time: '20:00',
-            expected_attendees: 10,
-            status: BookingStatus.PENDING,
-          },
-        })
+        // Create an uncommitted booking using pure SQL
+        await tx.$executeRaw`
+          INSERT INTO bookings (
+            booking_id, user_id, venue_id, event_name, event_date,
+            start_time, end_time, expected_attendees, status
+          )
+          VALUES (
+            gen_random_uuid(),
+            ${sampleUsers[0]?.user_id},
+            ${sampleVenues[0]?.venue_id},
+            'Intentional Rollback Test',
+            CURRENT_DATE,
+            '19:00',
+            '20:00',
+            10,
+            'PENDING'::"BookingStatus"
+          );
+        `
         // Force intentional transaction abort
         throw new Error('INTENTIONAL_ATOMICITY_TEST_ABORT')
       })
@@ -252,10 +286,10 @@ async function runLavanyaDefenseSuite() {
       }
     }
 
-    const postRollbackCount = await prisma.booking.count()
+    const postRollbackCount = await getTableCount('bookings')
     assert(
       errorCaught && postRollbackCount === initialBookingCount,
-      'ACID Atomicity Guaranteed: Intermediate write rolled back cleanly upon error',
+      'ACID Atomicity Guaranteed: Intermediate write rolled back cleanly upon error (Raw SQL)',
       `Booking table count remained unchanged at ${postRollbackCount}`
     )
 

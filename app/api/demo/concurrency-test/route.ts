@@ -8,15 +8,24 @@ export async function POST(request: NextRequest) {
     const body = await request.json().catch(() => ({}))
     // Pick first active venue or use provided
     let venueId = body.venueId
+    let venueName = 'Target Venue'
     if (!venueId) {
-      const venue = await prisma.venue.findFirst({ where: { status: 'ACTIVE' } })
-      if (!venue) {
+      const activeVenues = await prisma.$queryRaw<Array<{ venue_id: string; venue_name: string }>>`
+        SELECT venue_id, venue_name FROM venues WHERE status = 'ACTIVE'::"VenueStatus" LIMIT 1;
+      `
+      if (activeVenues.length === 0) {
         return NextResponse.json({ error: 'No active venue found for testing.' }, { status: 400 })
       }
-      venueId = venue.venue_id
+      venueId = activeVenues[0].venue_id
+      venueName = activeVenues[0].venue_name
+    } else {
+      const venues = await prisma.$queryRaw<Array<{ venue_id: string; venue_name: string }>>`
+        SELECT venue_id, venue_name FROM venues WHERE venue_id = ${venueId} LIMIT 1;
+      `
+      if (venues.length > 0) {
+        venueName = venues[0].venue_name
+      }
     }
-
-    const venue = await prisma.venue.findUnique({ where: { venue_id: venueId } })
 
     // Generate unique slot to avoid colliding with past test data
     const randomHour = 8 + Math.floor(Math.random() * 9) // 08:00 to 17:00
@@ -82,7 +91,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       testName: 'PostgreSQL ACID Concurrency Race Condition Test',
       timestamp: testStartTime,
-      targetVenue: venue?.venue_name,
+      targetVenue: venueName,
       targetSlot: `${dateStr} from ${startHourStr} to ${endHourStr}`,
       resultSummary: {
         totalRequestsFired: 2,

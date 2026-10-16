@@ -1,13 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/prisma'
 import { getAuthUser } from '@/lib/auth'
-import { BookingStatus, Role, Prisma } from '@prisma/client'
+import { Role } from '@prisma/client'
 
 export const dynamic = 'force-dynamic'
 
 /**
  * GET /api/bookings/my
- * Retrieves the authenticated student or faculty member's personal booking history.
+ * Pure SQL query retrieving student/faculty personal bookings and statistical metrics.
  */
 export async function GET(request: NextRequest) {
   try {
@@ -21,11 +21,10 @@ export async function GET(request: NextRequest) {
       if (roleHeader.toLowerCase() === 'admin') prismaRole = Role.ADMIN
       else if (roleHeader.toLowerCase() === 'employee') prismaRole = Role.EMPLOYEE
 
-      const user = await prisma.user.findFirst({
-        where: { role: prismaRole },
-        orderBy: { created_at: 'asc' },
-      })
-      targetUserId = user?.user_id
+      const users = await prisma.$queryRaw<Array<{ user_id: string }>>`
+        SELECT user_id FROM users WHERE role = ${prismaRole}::"Role" ORDER BY created_at ASC LIMIT 1
+      `
+      targetUserId = users[0]?.user_id
     }
 
     if (!targetUserId) {
@@ -35,54 +34,39 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url)
     const filterStatus = searchParams.get('status')
 
-    const whereClause: Prisma.BookingWhereInput = { user_id: targetUserId }
+    // 1. Fetch personal bookings via raw SQL with INNER JOIN
+    let query = `
+      SELECT 
+        b.booking_id, b.event_name, b.event_description, b.event_date::text, 
+        b.start_time, b.end_time, b.expected_attendees, b.status, b.created_at::text,
+        v.venue_id, v.venue_name, v.location, v.capacity, v.venue_type
+      FROM bookings b
+      JOIN venues v ON b.venue_id = v.venue_id
+      WHERE b.user_id = $1
+    `
+    const params: any[] = [targetUserId]
+
     if (filterStatus && filterStatus !== 'all') {
-      const upper = filterStatus.toUpperCase()
-      if (Object.values(BookingStatus).includes(upper as BookingStatus)) {
-        whereClause.status = upper as BookingStatus
-      }
+      params.push(filterStatus.toUpperCase())
+      query += ` AND b.status = $${params.length}::"BookingStatus"`
     }
 
-    const bookings = await prisma.booking.findMany({
-      where: whereClause,
-      orderBy: { created_at: 'desc' },
-      include: {
-        venue: {
-          select: {
-            venue_id: true,
-            venue_name: true,
-            location: true,
-            capacity: true,
-            venue_type: true,
-          },
-        },
-        approvals: {
-          include: {
-            employee: {
-              select: {
-                employee_code: true,
-                designation: true,
-                user: { select: { name: true } },
-              },
-            },
-          },
-        },
-      },
-    })
+    query += ` ORDER BY b.created_at DESC;`
 
-    // Compute user booking statistics
-    const allUserBookings = await prisma.booking.findMany({
-      where: { user_id: targetUserId },
-      select: { status: true },
-    })
+    const bookings: any[] = await prisma.$queryRawUnsafe(query, ...params)
 
-    const metrics = {
-      total: allUserBookings.length,
-      pending: allUserBookings.filter((b) => b.status === BookingStatus.PENDING).length,
-      approved: allUserBookings.filter((b) => b.status === BookingStatus.APPROVED).length,
-      rejected: allUserBookings.filter((b) => b.status === BookingStatus.REJECTED).length,
-      cancelled: allUserBookings.filter((b) => b.status === BookingStatus.CANCELLED).length,
-    }
+    // 2. Compute aggregate booking counts via SQL aggregation
+    const metricRows = await prisma.$queryRaw<Array<{ total: number; pending: number; approved: number; rejected: number; cancelled: number }>>`
+      SELECT 
+        COUNT(*)::int AS total,
+        COUNT(CASE WHEN status = 'PENDING' THEN 1 END)::int AS pending,
+        COUNT(CASE WHEN status = 'APPROVED' THEN 1 END)::int AS approved,
+        COUNT(CASE WHEN status = 'REJECTED' THEN 1 END)::int AS rejected,
+        COUNT(CASE WHEN status = 'CANCELLED' THEN 1 END)::int AS cancelled
+      FROM bookings
+      WHERE user_id = ${targetUserId}
+    `
+    const metrics = metricRows[0] || { total: 0, pending: 0, approved: 0, rejected: 0, cancelled: 0 }
 
     return NextResponse.json({
       success: true,
@@ -94,20 +78,19 @@ export async function GET(request: NextRequest) {
         eventName: b.event_name,
         description: b.event_description,
         venueId: b.venue_id,
-        venueName: b.venue.venue_name,
-        venueLocation: b.venue.location,
-        capacity: b.venue.capacity,
-        date: b.event_date.toISOString().split('T')[0],
+        venueName: b.venue_name,
+        venueLocation: b.location,
+        capacity: b.capacity,
+        date: b.event_date,
         startTime: b.start_time,
         endTime: b.end_time,
         attendees: b.expected_attendees,
         status: b.status,
-        approvals: b.approvals,
-        createdAt: b.created_at.toISOString(),
+        createdAt: b.created_at,
       })),
     })
   } catch (error: any) {
-    console.error('Error in GET /api/bookings/my:', error)
+    console.error('Error in SQL GET /api/bookings/my:', error)
     return NextResponse.json(
       { error: error?.message || 'Failed to fetch personal bookings.' },
       { status: 500 }

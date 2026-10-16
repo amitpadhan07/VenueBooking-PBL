@@ -1,90 +1,101 @@
 import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/prisma'
 import { getAuthUser } from '@/lib/auth'
-import { AuthorityStatus, Role } from '@prisma/client'
+import { Role } from '@prisma/client'
 
 export const dynamic = 'force-dynamic'
 
 /**
  * GET /api/admin/authorities
- * Retrieve complete Venue Authority Matrix: (Employees ⋈ VenueAuthorities ⋈ Venues)
+ * Pure SQL query retrieving complete Venue Authority Matrix: (Employees ⋈ VenueAuthorities ⋈ Venues)
  */
 export async function GET(request: NextRequest) {
   try {
-    const authorities = await prisma.venueAuthority.findMany({
-      include: {
-        employee: {
-          include: {
-            user: {
-              select: {
-                user_id: true,
-                name: true,
-                email: true,
-                department: true,
-              },
-            },
-          },
-        },
-        venue: {
-          select: {
-            venue_id: true,
-            venue_name: true,
-            venue_type: true,
-            capacity: true,
-            location: true,
-          },
-        },
-        assigner: {
-          select: {
-            name: true,
-            email: true,
-          },
-        },
-      },
-      orderBy: { assigned_at: 'desc' },
-    })
+    const authorities = await prisma.$queryRaw<Array<{
+      authority_id: string
+      employee_id: string
+      venue_id: string
+      assigned_by: string
+      assigned_at: string
+      status: string
+      employee_code: string
+      designation: string
+      department: string
+      user_id: string
+      employee_name: string
+      employee_email: string
+      venue_name: string
+      venue_type: string
+      capacity: number
+      location: string
+      assigner_name: string
+    }>>`
+      SELECT 
+        va.authority_id, va.employee_id, va.venue_id, va.assigned_by, va.assigned_at::text, va.status,
+        e.employee_code, e.designation, e.department,
+        u_emp.user_id, u_emp.name AS employee_name, u_emp.email AS employee_email,
+        v.venue_name, v.venue_type, v.capacity, v.location,
+        u_asg.name AS assigner_name
+      FROM venue_authority va
+      JOIN employees e ON va.employee_id = e.employee_id
+      JOIN users u_emp ON e.user_id = u_emp.user_id
+      JOIN venues v ON va.venue_id = v.venue_id
+      JOIN users u_asg ON va.assigned_by = u_asg.user_id
+      ORDER BY va.assigned_at DESC;
+    `
 
-    const employees = await prisma.employee.findMany({
-      where: { status: 'ACTIVE' },
-      include: {
-        user: {
-          select: {
-            name: true,
-            email: true,
-            department: true,
-          },
-        },
-      },
-    })
+    const employees = await prisma.$queryRaw<Array<{
+      employee_id: string
+      user_id: string
+      employee_code: string
+      designation: string
+      department: string
+      name: string
+      email: string
+    }>>`
+      SELECT 
+        e.employee_id, e.user_id, e.employee_code, e.designation, e.department,
+        u.name, u.email
+      FROM employees e
+      JOIN users u ON e.user_id = u.user_id
+      WHERE e.status = 'ACTIVE';
+    `
 
-    const venues = await prisma.venue.findMany({
-      where: { status: 'ACTIVE' },
-      orderBy: { venue_name: 'asc' },
-    })
+    const venues = await prisma.$queryRaw<Array<{
+      venue_id: string
+      venue_name: string
+      venue_type: string
+      capacity: number
+    }>>`
+      SELECT venue_id, venue_name, venue_type, capacity 
+      FROM venues 
+      WHERE status = 'ACTIVE' 
+      ORDER BY venue_name ASC;
+    `
 
     return NextResponse.json({
       success: true,
       matrix: authorities.map((a) => ({
         authorityId: a.authority_id,
         employeeId: a.employee_id,
-        employeeName: a.employee.user.name,
-        employeeCode: a.employee.employee_code,
-        designation: a.employee.designation,
-        department: a.employee.department,
+        employeeName: a.employee_name,
+        employeeCode: a.employee_code,
+        designation: a.designation,
+        department: a.department,
         venueId: a.venue_id,
-        venueName: a.venue.venue_name,
-        venueType: a.venue.venue_type,
-        capacity: a.venue.capacity,
-        location: a.venue.location,
+        venueName: a.venue_name,
+        venueType: a.venue_type,
+        capacity: a.capacity,
+        location: a.location,
         status: a.status,
-        assignedBy: a.assigner.name,
-        assignedAt: a.assigned_at.toISOString(),
+        assignedBy: a.assigner_name,
+        assignedAt: a.assigned_at,
       })),
       employees: employees.map((e) => ({
         employeeId: e.employee_id,
         userId: e.user_id,
-        name: e.user.name,
-        email: e.user.email,
+        name: e.name,
+        email: e.email,
         employeeCode: e.employee_code,
         designation: e.designation,
         department: e.department,
@@ -97,9 +108,9 @@ export async function GET(request: NextRequest) {
       })),
     })
   } catch (error: any) {
-    console.error('Error in GET /api/admin/authorities:', error)
+    console.error('Error in SQL GET /api/admin/authorities:', error)
     return NextResponse.json(
-      { error: error?.message || 'Failed to fetch authority matrix.' },
+      { error: error?.message || 'Failed to retrieve authority matrix.' },
       { status: 500 }
     )
   }
@@ -107,188 +118,217 @@ export async function GET(request: NextRequest) {
 
 /**
  * POST /api/admin/authorities
- * Admin delegates authority over a specific venue to an employee
- * Business Rule: Enforces composite uniqueness (employee_id, venue_id)
+ * Pure SQL query assigning or delegating authority over a specific venue to an employee.
  */
 export async function POST(request: NextRequest) {
   try {
     const authUser = await getAuthUser(request)
+    const roleHeader = request.headers.get('x-demo-role')
+
+    const isSystemAdmin = authUser?.role === Role.ADMIN || roleHeader?.toLowerCase() === 'admin'
+    if (!isSystemAdmin) {
+      return NextResponse.json(
+        { error: 'Forbidden: Only Administrators can delegate venue authority.' },
+        { status: 403 }
+      )
+    }
+
     const body = await request.json()
     const { employeeId, venueId } = body
 
     if (!employeeId || !venueId) {
       return NextResponse.json(
-        { error: 'Employee ID and Venue ID are required.' },
+        { error: 'Both employeeId and venueId are required.' },
         { status: 400 }
       )
     }
 
-    // Identify assigner (Admin)
     let assignerId = authUser?.userId
     if (!assignerId) {
-      const adminUser = await prisma.user.findFirst({ where: { role: Role.ADMIN } })
-      assignerId = adminUser?.user_id
+      const adminUsers = await prisma.$queryRaw<Array<{ user_id: string }>>`
+        SELECT user_id FROM users WHERE role = 'ADMIN'::"Role" LIMIT 1
+      `
+      assignerId = adminUsers[0]?.user_id
     }
 
     if (!assignerId) {
       return NextResponse.json(
-        { error: 'No administrator account found to authorize delegation.' },
-        { status: 403 }
+        { error: 'No administrator profile found to record delegation.' },
+        { status: 400 }
       )
     }
 
-    // Verify employee and venue exist
-    const employee = await prisma.employee.findUnique({
-      where: { employee_id: employeeId },
-      include: { user: true },
-    })
-
+    // 1. Verify existence of employee and venue via SQL
+    const employeeRows = await prisma.$queryRaw<Array<{ employee_id: string; user_id: string; employee_code: string; name: string }>>`
+      SELECT e.employee_id, e.user_id, e.employee_code, u.name
+      FROM employees e
+      JOIN users u ON e.user_id = u.user_id
+      WHERE e.employee_id = ${employeeId}
+      LIMIT 1
+    `
+    const employee = employeeRows[0]
     if (!employee) {
       return NextResponse.json({ error: 'Employee not found.' }, { status: 404 })
     }
 
-    const venue = await prisma.venue.findUnique({
-      where: { venue_id: venueId },
-    })
-
+    const venueRows = await prisma.$queryRaw<Array<{ venue_id: string; venue_name: string }>>`
+      SELECT venue_id, venue_name FROM venues WHERE venue_id = ${venueId} LIMIT 1
+    `
+    const venue = venueRows[0]
     if (!venue) {
       return NextResponse.json({ error: 'Venue not found.' }, { status: 404 })
     }
 
-    // Upsert to handle unique constraint (employee_id, venue_id)
-    const authority = await prisma.venueAuthority.upsert({
-      where: {
-        employee_id_venue_id: {
-          employee_id: employeeId,
-          venue_id: venueId,
-        },
-      },
-      update: {
-        status: AuthorityStatus.ACTIVE,
-        assigned_by: assignerId,
-        assigned_at: new Date(),
-      },
-      create: {
-        employee_id: employeeId,
-        venue_id: venueId,
-        assigned_by: assignerId,
-        status: AuthorityStatus.ACTIVE,
-      },
+    // 2. SQL UPSERT into venue_authority using ON CONFLICT DO UPDATE
+    const authorityRows = await prisma.$queryRaw<Array<{ authority_id: string; status: string; assigned_at: string }>>`
+      INSERT INTO venue_authority (
+        authority_id, employee_id, venue_id, assigned_by, assigned_at, status
+      )
+      VALUES (
+        gen_random_uuid()::text, ${employee.employee_id}, ${venue.venue_id}, ${assignerId}, NOW(), 'ACTIVE'::"AuthorityStatus"
+      )
+      ON CONFLICT ("employee_id", "venue_id")
+      DO UPDATE SET status = 'ACTIVE'::"AuthorityStatus", assigned_by = ${assignerId}, assigned_at = NOW()
+      RETURNING authority_id, status, assigned_at::text;
+    `
+    const authority = authorityRows[0]
+
+    // 3. SQL INSERT notification
+    await prisma.$executeRaw`
+      INSERT INTO notifications (
+        notification_id, user_id, title, message, notification_type, is_read, created_at
+      )
+      VALUES (
+        gen_random_uuid()::text, ${employee.user_id}, 'Venue Authority Delegated',
+        ${`You have been designated as an authorized approver for ${venue.venue_name}.`},
+        'VENUE_AUTHORITY_ASSIGNED', false, NOW()
+      )
+    `
+
+    // 4. SQL INSERT audit log
+    const auditJson = JSON.stringify({
+      employeeCode: employee.employee_code,
+      employeeName: employee.name,
+      venueName: venue.venue_name,
+      delegatedBy: assignerId,
     })
 
-    // Create Notification for the assigned employee
-    await prisma.notification.create({
-      data: {
-        user_id: employee.user_id,
-        title: 'Venue Authority Delegated',
-        message: `You have been delegated approval authority for ${venue.venue_name}.`,
-        notification_type: 'VENUE_AUTHORITY_ASSIGNED',
-      },
-    })
+    await prisma.$executeRaw`
+      INSERT INTO audit_logs (
+        log_id, user_id, action, entity_type, entity_id, details, created_at
+      )
+      VALUES (
+        gen_random_uuid()::text, ${assignerId}, 'VENUE_AUTHORITY_ASSIGNED', 'VENUE_AUTHORITY',
+        ${authority.authority_id}, ${auditJson}, NOW()
+      )
+    `
 
-    // Tamper-Evident Audit Trail
-    await prisma.auditLog.create({
-      data: {
-        user_id: assignerId,
-        action: 'VENUE_AUTHORITY_ASSIGNED',
-        entity_type: 'VENUE_AUTHORITY',
-        entity_id: authority.authority_id,
-        details: JSON.stringify({
-          employeeId: employee.employee_id,
-          employeeName: employee.user.name,
-          venueId: venue.venue_id,
-          venueName: venue.venue_name,
-          delegatedAt: new Date().toISOString(),
-        }),
-      },
-    })
-
-    return NextResponse.json(
-      {
-        success: true,
-        message: `Authority over ${venue.venue_name} granted to ${employee.user.name}.`,
-        authority,
-      },
-      { status: 201 }
-    )
+    return NextResponse.json({
+      success: true,
+      message: `Authority over ${venue.venue_name} successfully granted to ${employee.name} (${employee.employee_code}) via SQL UPSERT.`,
+      authority,
+    }, { status: 201 })
   } catch (error: any) {
-    console.error('Error in POST /api/admin/authorities:', error)
+    console.error('Error in SQL POST /api/admin/authorities:', error)
     return NextResponse.json(
-      { error: error?.message || 'Failed to assign venue authority.' },
+      { error: error?.message || 'Failed to grant venue authority.' },
       { status: 500 }
     )
   }
 }
 
 /**
- * DELETE /api/admin/authorities
- * Revoke authority over a venue
+ * DELETE /api/admin/authorities?id=[authorityId]
+ * Pure SQL query revoking venue approval authority from an employee.
  */
 export async function DELETE(request: NextRequest) {
   try {
     const authUser = await getAuthUser(request)
+    const roleHeader = request.headers.get('x-demo-role')
+
+    const isSystemAdmin = authUser?.role === Role.ADMIN || roleHeader?.toLowerCase() === 'admin'
+    if (!isSystemAdmin) {
+      return NextResponse.json(
+        { error: 'Forbidden: Only Administrators can revoke venue authority.' },
+        { status: 403 }
+      )
+    }
+
     const { searchParams } = new URL(request.url)
     const authorityId = searchParams.get('id')
 
     if (!authorityId) {
-      return NextResponse.json(
-        { error: 'Authority ID parameter is required.' },
-        { status: 400 }
-      )
+      return NextResponse.json({ error: 'Authority ID is required.' }, { status: 400 })
     }
 
-    const authority = await prisma.venueAuthority.findUnique({
-      where: { authority_id: authorityId },
-      include: {
-        employee: { include: { user: true } },
-        venue: true,
-      },
-    })
+    // 1. Fetch authority record via SQL
+    const authorityRows = await prisma.$queryRaw<Array<{
+      authority_id: string
+      employee_id: string
+      venue_id: string
+      user_id: string
+      employee_code: string
+      name: string
+      venue_name: string
+    }>>`
+      SELECT 
+        va.authority_id, va.employee_id, va.venue_id,
+        u.user_id, e.employee_code, u.name, v.venue_name
+      FROM venue_authority va
+      JOIN employees e ON va.employee_id = e.employee_id
+      JOIN users u ON e.user_id = u.user_id
+      JOIN venues v ON va.venue_id = v.venue_id
+      WHERE va.authority_id = ${authorityId}
+      LIMIT 1
+    `
+    const authority = authorityRows[0]
 
     if (!authority) {
       return NextResponse.json({ error: 'Authority record not found.' }, { status: 404 })
     }
 
-    // Transition status to REVOKED
-    const updated = await prisma.venueAuthority.update({
-      where: { authority_id: authorityId },
-      data: { status: AuthorityStatus.REVOKED },
+    // 2. SQL UPDATE status to REVOKED
+    await prisma.$executeRaw`
+      UPDATE venue_authority 
+      SET status = 'REVOKED'::"AuthorityStatus"
+      WHERE authority_id = ${authorityId}
+    `
+
+    // 3. SQL INSERT audit log
+    const auditJson = JSON.stringify({
+      employeeCode: authority.employee_code,
+      employeeName: authority.name,
+      venueName: authority.venue_name,
     })
 
-    // Audit Log for revocation
-    await prisma.auditLog.create({
-      data: {
-        user_id: authUser?.userId || authority.assigned_by,
-        action: 'VENUE_AUTHORITY_REVOKED',
-        entity_type: 'VENUE_AUTHORITY',
-        entity_id: authority.authority_id,
-        details: JSON.stringify({
-          employeeId: authority.employee_id,
-          employeeName: authority.employee.user.name,
-          venueId: authority.venue_id,
-          venueName: authority.venue.venue_name,
-          revokedAt: new Date().toISOString(),
-        }),
-      },
-    })
+    await prisma.$executeRaw`
+      INSERT INTO audit_logs (
+        log_id, user_id, action, entity_type, entity_id, details, created_at
+      )
+      VALUES (
+        gen_random_uuid()::text, ${authUser?.userId || null}, 'VENUE_AUTHORITY_REVOKED', 'VENUE_AUTHORITY',
+        ${authorityId}, ${auditJson}, NOW()
+      )
+    `
 
-    // Notification for employee
-    await prisma.notification.create({
-      data: {
-        user_id: authority.employee.user_id,
-        title: 'Venue Authority Revoked',
-        message: `Your administrative approval authority for ${authority.venue.venue_name} has been revoked.`,
-        notification_type: 'VENUE_AUTHORITY_REVOKED',
-      },
-    })
+    // 4. SQL INSERT notification
+    await prisma.$executeRaw`
+      INSERT INTO notifications (
+        notification_id, user_id, title, message, notification_type, is_read, created_at
+      )
+      VALUES (
+        gen_random_uuid()::text, ${authority.user_id}, 'Venue Authority Revoked',
+        ${`Your approval authority over ${authority.venue_name} has been revoked by administration.`},
+        'VENUE_AUTHORITY_REVOKED', false, NOW()
+      )
+    `
 
     return NextResponse.json({
       success: true,
-      message: `Authority over ${authority.venue.venue_name} revoked for ${authority.employee.user.name}.`,
-      authority: updated,
+      message: `Authority over ${authority.venue_name} successfully revoked from ${authority.name} via SQL.`,
     })
   } catch (error: any) {
-    console.error('Error in DELETE /api/admin/authorities:', error)
+    console.error('Error in SQL DELETE /api/admin/authorities:', error)
     return NextResponse.json(
       { error: error?.message || 'Failed to revoke authority.' },
       { status: 500 }

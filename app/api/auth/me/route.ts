@@ -19,11 +19,14 @@ export async function GET(request: NextRequest) {
         if (demoRole.toLowerCase() === 'student') prismaRole = Role.STUDENT
         else if (demoRole.toLowerCase() === 'employee') prismaRole = Role.EMPLOYEE
 
-        const sampleUser = await prisma.user.findFirst({
-          where: { role: prismaRole },
-          orderBy: { created_at: 'asc' },
-        })
-        targetUserId = sampleUser?.user_id
+        // Pure SQL query for fallback demo user lookup
+        const sampleUsers = await prisma.$queryRaw<Array<{ user_id: string }>>`
+          SELECT user_id FROM users 
+          WHERE role = ${prismaRole}::"Role" 
+          ORDER BY created_at ASC 
+          LIMIT 1;
+        `
+        targetUserId = sampleUsers[0]?.user_id
       }
     }
 
@@ -34,45 +37,79 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    const user = await prisma.user.findUnique({
-      where: { user_id: targetUserId },
-      select: {
-        user_id: true,
-        name: true,
-        email: true,
-        role: true,
-        department: true,
-        phone: true,
-        created_at: true,
-        employee: {
-          select: {
-            employee_id: true,
-            employee_code: true,
-            designation: true,
-            department: true,
-            authorities: {
-              where: { status: 'ACTIVE' },
-              include: {
-                venue: {
-                  select: {
-                    venue_id: true,
-                    venue_name: true,
-                    capacity: true,
-                    location: true,
-                  },
-                },
-              },
-            },
-          },
-        },
-      },
-    })
+    // Pure SQL Query: Relational LEFT JOIN between users and employees
+    const userRows = await prisma.$queryRaw<Array<{
+      user_id: string
+      name: string
+      email: string
+      role: Role
+      department: string | null
+      phone: string | null
+      created_at: Date
+      employee_id: string | null
+      employee_code: string | null
+      designation: string | null
+    }>>`
+      SELECT 
+        u.user_id,
+        u.name,
+        u.email,
+        u.role,
+        u.department,
+        u.phone,
+        u.created_at,
+        e.employee_id,
+        e.employee_code,
+        e.designation
+      FROM users u
+      LEFT JOIN employees e ON u.user_id = e.user_id
+      WHERE u.user_id = ${targetUserId}
+      LIMIT 1;
+    `
 
+    const user = userRows[0]
     if (!user) {
       return NextResponse.json(
         { error: 'User profile not found.' },
         { status: 404 }
       )
+    }
+
+    // If employee profile exists, fetch authorized venues via pure SQL INNER JOIN
+    let authorizedVenues: Array<{
+      authorityId: string
+      venueId: string
+      venueName: string
+      capacity: number
+      location: string
+    }> = []
+
+    if (user.employee_id) {
+      const authRows = await prisma.$queryRaw<Array<{
+        authority_id: string
+        venue_id: string
+        venue_name: string
+        capacity: number
+        location: string
+      }>>`
+        SELECT 
+          va.authority_id,
+          v.venue_id,
+          v.venue_name,
+          v.capacity,
+          v.location
+        FROM venue_authority va
+        INNER JOIN venues v ON va.venue_id = v.venue_id
+        WHERE va.employee_id = ${user.employee_id} 
+          AND va.status = 'ACTIVE'::"AuthorityStatus";
+      `
+      authorizedVenues = authRows.map((r) => ({
+        authorityId: r.authority_id,
+        venueId: r.venue_id,
+        venueName: r.venue_name,
+        capacity: r.capacity,
+        location: r.location,
+      }))
     }
 
     return NextResponse.json({
@@ -84,18 +121,12 @@ export async function GET(request: NextRequest) {
         role: user.role,
         department: user.department,
         phone: user.phone,
-        employee: user.employee
+        employee: user.employee_id
           ? {
-              employeeId: user.employee.employee_id,
-              employeeCode: user.employee.employee_code,
-              designation: user.employee.designation,
-              authorizedVenues: user.employee.authorities.map((a) => ({
-                authorityId: a.authority_id,
-                venueId: a.venue.venue_id,
-                venueName: a.venue.venue_name,
-                capacity: a.venue.capacity,
-                location: a.venue.location,
-              })),
+              employeeId: user.employee_id,
+              employeeCode: user.employee_code,
+              designation: user.designation,
+              authorizedVenues,
             }
           : null,
       },

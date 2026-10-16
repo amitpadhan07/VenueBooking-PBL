@@ -2,26 +2,38 @@ import { PrismaClient } from "@prisma/client"
 
 const prisma = new PrismaClient()
 
+async function countTable(tableName: string): Promise<number> {
+  const res = await prisma.$queryRawUnsafe<Array<{ count: string | number | bigint }>>(
+    `SELECT COUNT(*) AS count FROM ${tableName};`
+  )
+  return Number(res[0]?.count ?? 0)
+}
+
 async function main() {
-  console.log("Checking tables in database...")
-  console.log("-------------------------------------")
-  console.log("users table count:", await prisma.user.count())
-  console.log("venues table count:", await prisma.venue.count())
-  console.log("employees table count:", await prisma.employee.count())
-  console.log("venue_authority table count:", await prisma.venueAuthority.count())
-  console.log("bookings table count:", await prisma.booking.count())
-  console.log("approvals table count:", await prisma.approval.count())
-  console.log("notifications table count:", await prisma.notification.count())
-  console.log("audit_logs table count:", await prisma.auditLog.count())
-  console.log("-------------------------------------")
+  console.log("Checking tables in database via PostgreSQL Raw SQL...")
+  console.log("-----------------------------------------------------")
+  console.log("users table count:", await countTable("users"))
+  console.log("venues table count:", await countTable("venues"))
+  console.log("employees table count:", await countTable("employees"))
+  console.log("venue_authority table count:", await countTable("venue_authority"))
+  console.log("bookings table count:", await countTable("bookings"))
+  console.log("approvals table count:", await countTable("approvals"))
+  console.log("notifications table count:", await countTable("notifications"))
+  console.log("audit_logs table count:", await countTable("audit_logs"))
+  console.log("-----------------------------------------------------")
 
-  const users = await prisma.user.findMany({ select: { email: true, role: true } })
-  console.log("Seeded Users:", users)
+  const users = await prisma.$queryRaw<Array<{ email: string; role: string }>>`
+    SELECT email, role FROM users ORDER BY created_at ASC;
+  `
+  console.log("Seeded Users (Raw SQL):", users)
 
-  const venues = await prisma.venue.findMany({ select: { venue_name: true, capacity: true } })
-  console.log("Seeded Venues:", venues)
+  const venues = await prisma.$queryRaw<Array<{ venue_name: string; capacity: number }>>`
+    SELECT venue_name, capacity FROM venues ORDER BY venue_name ASC;
+  `
+  console.log("Seeded Venues (Raw SQL):", venues)
 }
 
 main()
   .catch(console.error)
   .finally(() => prisma.$disconnect())
+

@@ -5,6 +5,10 @@ import { Role } from '@prisma/client'
 
 export const dynamic = 'force-dynamic'
 
+/**
+ * POST /api/auth/register
+ * Pure SQL query validating uniqueness, inserting user and employee profile, and recording audit trail.
+ */
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
@@ -26,12 +30,12 @@ export async function POST(request: NextRequest) {
 
     const normalizedEmail = email.toLowerCase().trim()
 
-    // Check if user already exists
-    const existing = await prisma.user.findUnique({
-      where: { email: normalizedEmail },
-    })
+    // 1. Check if user already exists via raw SQL
+    const existingRows = await prisma.$queryRaw<Array<{ user_id: string }>>`
+      SELECT user_id FROM users WHERE email = ${normalizedEmail} LIMIT 1;
+    `
 
-    if (existing) {
+    if (existingRows.length > 0) {
       return NextResponse.json(
         { error: 'An account with this email address already exists.' },
         { status: 409 }
@@ -50,49 +54,57 @@ export async function POST(request: NextRequest) {
     // Hash password with bcrypt (10 rounds)
     const passwordHash = await hashPassword(password)
 
-    // Create user in database
-    const newUser = await prisma.user.create({
-      data: {
-        name: name.trim(),
-        email: normalizedEmail,
-        password_hash: passwordHash,
-        role: assignedRole,
-        department: department.trim(),
-        phone: phone ? phone.trim() : null,
-      },
-    })
+    // 2. Insert user into database via raw SQL
+    const insertedUsers = await prisma.$queryRaw<Array<{
+      user_id: string
+      name: string
+      email: string
+      role: any
+      department: string
+    }>>`
+      INSERT INTO users (
+        user_id, name, email, password_hash, role, department, phone, created_at, updated_at
+      )
+      VALUES (
+        gen_random_uuid()::text, ${name.trim()}, ${normalizedEmail}, ${passwordHash}, 
+        ${assignedRole}::"Role", ${department.trim()}, ${phone ? phone.trim() : null}, NOW(), NOW()
+      )
+      RETURNING user_id, name, email, role, department;
+    `
+    const newUser = insertedUsers[0]
 
-    // If Employee, auto-provision employee profile
+    // 3. If Employee, auto-provision employee profile via raw SQL
     if (assignedRole === Role.EMPLOYEE) {
       const empCode = `EMP_${Math.floor(1000 + Math.random() * 9000)}`
-      await prisma.employee.create({
-        data: {
-          user_id: newUser.user_id,
-          employee_code: empCode,
-          designation: 'Department Staff',
-          department: newUser.department,
-          status: 'ACTIVE',
-        },
-      })
+      await prisma.$executeRaw`
+        INSERT INTO employees (
+          employee_id, user_id, employee_code, designation, department, status, created_at
+        )
+        VALUES (
+          gen_random_uuid()::text, ${newUser.user_id}, ${empCode}, 'Department Staff', ${newUser.department}, 'ACTIVE', NOW()
+        );
+      `
     }
 
-    // Non-repudiation: Audit log record
-    await prisma.auditLog.create({
-      data: {
-        user_id: newUser.user_id,
-        action: 'USER_REGISTERED',
-        entity_type: 'USER',
-        entity_id: newUser.user_id,
-        details: JSON.stringify({
-          email: newUser.email,
-          role: newUser.role,
-          department: newUser.department,
-          method: 'BCRYPT_10_ROUNDS',
-        }),
-      },
+    // 4. Non-repudiation: Audit log record via raw SQL
+    const detailsJson = JSON.stringify({
+      email: newUser.email,
+      role: newUser.role,
+      department: newUser.department,
+      method: 'BCRYPT_10_ROUNDS',
     })
 
-    // Sign JWT Token
+    await prisma.$executeRaw`
+      INSERT INTO audit_logs (
+        log_id, user_id, action, entity_type, entity_id, details, created_at
+      )
+      VALUES (
+        gen_random_uuid()::text, ${newUser.user_id}, 'USER_REGISTERED', 'USER',
+        ${newUser.user_id}, ${detailsJson}, NOW()
+      );
+    `
+
+    // 5. Issue token
     const token = signToken({
       userId: newUser.user_id,
       email: newUser.email,
@@ -100,39 +112,32 @@ export async function POST(request: NextRequest) {
       name: newUser.name,
     })
 
-    const response = NextResponse.json(
-      {
-        success: true,
-        message: 'Account registered successfully.',
-        user: {
-          user_id: newUser.user_id,
-          name: newUser.name,
-          email: newUser.email,
-          role: newUser.role,
-          department: newUser.department,
-          phone: newUser.phone,
-        },
-        token,
+    const response = NextResponse.json({
+      success: true,
+      message: 'Account registered successfully via SQL.',
+      token,
+      user: {
+        userId: newUser.user_id,
+        name: newUser.name,
+        email: newUser.email,
+        role: newUser.role,
+        department: newUser.department,
       },
-      { status: 201 }
-    )
+    }, { status: 201 })
 
-    // Set secure HTTP-only cookie
-    response.cookies.set({
-      name: 'auth_token',
-      value: token,
+    response.cookies.set('auth_token', token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'lax',
       path: '/',
-      maxAge: 60 * 60 * 24 * 7, // 7 days
+      maxAge: 60 * 60 * 24,
     })
 
     return response
   } catch (error: any) {
-    console.error('Error in POST /api/auth/register:', error)
+    console.error('Error in SQL POST /api/auth/register:', error)
     return NextResponse.json(
-      { error: error?.message || 'Internal server error during registration.' },
+      { error: error?.message || 'Registration failed.' },
       { status: 500 }
     )
   }
