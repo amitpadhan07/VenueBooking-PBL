@@ -354,6 +354,74 @@ export default function DBMSAcademicLab() {
           </div>
         </div>
       </div>
+
+      {/* Section 4: Akshat's Defense Focus - Write-Ahead Logging (WAL) & Crash Recovery (ARIES) */}
+      <div className="rounded-2xl border border-border bg-card p-6 shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-4 border-b border-border pb-4">
+          <div>
+            <div className="flex items-center gap-2">
+              <ShieldCheck className="size-5 text-primary" />
+              <h3 className="font-semibold text-lg">PostgreSQL Crash Recovery & Write-Ahead Logging (WAL)</h3>
+            </div>
+            <p className="text-xs text-muted-foreground mt-1">
+              <strong>WAL Protocol:</strong> No database block is written to disk until the corresponding log record is flushed to persistent storage.
+            </p>
+          </div>
+          <span className="rounded-full bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">
+            ARIES Recovery Algorithm
+          </span>
+        </div>
+
+        <div className="mt-5 grid grid-cols-1 lg:grid-cols-3 gap-4">
+          <div className="rounded-xl border border-border bg-muted/30 p-4">
+            <div className="flex items-center gap-2 text-primary font-semibold text-sm mb-2">
+              <span className="flex size-6 items-center justify-center rounded-full bg-primary text-primary-foreground text-xs font-bold">1</span>
+              <span>Analysis Phase</span>
+            </div>
+            <p className="text-xs text-muted-foreground leading-relaxed">
+              Scans forward from the last Checkpoint in the WAL. Identifies all <strong>dirty pages</strong> in the buffer pool and constructs the <strong>Transaction Table</strong> of all transactions that were active at the instant of crash.
+            </p>
+            <div className="mt-3 rounded-lg bg-background p-2.5 font-mono text-[11px] border border-border text-muted-foreground">
+              Checkpoint → Scan Forward → Identify Active T_uncommitted
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-border bg-muted/30 p-4">
+            <div className="flex items-center gap-2 text-emerald-500 font-semibold text-sm mb-2">
+              <span className="flex size-6 items-center justify-center rounded-full bg-emerald-500 text-white text-xs font-bold">2</span>
+              <span>Redo Phase (Durability)</span>
+            </div>
+            <p className="text-xs text-muted-foreground leading-relaxed">
+              Repeats all operations logged in WAL up to the crash point, including those of uncommitted transactions (Repeating History). Ensures all committed updates are physically restored to table pages.
+            </p>
+            <div className="mt-3 rounded-lg bg-background p-2.5 font-mono text-[11px] border border-border text-emerald-600 dark:text-emerald-400">
+              Redo all logged updates → Enforces Durability
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-border bg-muted/30 p-4">
+            <div className="flex items-center gap-2 text-rose-500 font-semibold text-sm mb-2">
+              <span className="flex size-6 items-center justify-center rounded-full bg-rose-500 text-white text-xs font-bold">3</span>
+              <span>Undo Phase (Atomicity)</span>
+            </div>
+            <p className="text-xs text-muted-foreground leading-relaxed">
+              Scans backward through the WAL and reverses the modifications of all transactions that were uncommitted when the system crashed. Writes Compensating Log Records (CLR) so restarts never fail.
+            </p>
+            <div className="mt-3 rounded-lg bg-background p-2.5 font-mono text-[11px] border border-border text-rose-600 dark:text-rose-400">
+              Scan Backward → Rollback active uncommitted → Enforces Atomicity
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-5 rounded-xl border border-primary/20 bg-primary/5 p-4 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <Sparkles className="size-5 text-primary shrink-0" />
+            <p className="text-xs text-muted-foreground">
+              In VenueDesk, every <code className="font-mono bg-background px-1 py-0.5 rounded">POST /api/bookings/concurrent-safe</code> commits its booking, notification, and audit trail records sequentially to the WAL before acknowledging HTTP 201 to the client.
+            </p>
+          </div>
+        </div>
+      </div>
     </div>
   )
 }
