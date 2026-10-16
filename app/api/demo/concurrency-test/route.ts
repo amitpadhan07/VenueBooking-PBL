@@ -29,10 +29,11 @@ export async function POST(request: NextRequest) {
     const endAt = `${dateStr}T${endHourStr}`
 
     // Internal helper to invoke concurrent booking logic directly
+    const origin = request.nextUrl.origin || process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
     const runAttempt = async (clientId: string, requesterRole: string) => {
       const startTime = performance.now()
       try {
-        const res = await fetch(`http://localhost:3000/api/bookings/concurrent-safe`, {
+        const res = await fetch(`${origin}/api/bookings/concurrent-safe`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
