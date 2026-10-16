@@ -195,8 +195,8 @@ export default function BankersAlgorithmSimulator() {
             </div>
           </div>
 
-          <div className="mt-4 pt-2 border-t border-border text-[11px] text-muted-foreground">
-            $\text{Available}[j] = \text{Total}[j] - \sum \text{Alloc}[i][j]$
+          <div className="mt-4 pt-2 border-t border-border text-[11px] text-muted-foreground font-mono">
+            {"Available[j] = Total[j] - Σ Alloc[i][j]"}
           </div>
         </div>
       </div>

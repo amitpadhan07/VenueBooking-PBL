@@ -53,7 +53,7 @@ export default function AuthDefenseWidget({ currentRole, currentName }: { curren
             Passwords are never stored in plaintext. Seeded with <strong>10 salt rounds</strong> to defeat GPU rainbow-table attacks.
           </p>
           <div className="rounded bg-background p-2 font-mono text-[10px] text-muted-foreground border border-border overflow-x-auto">
-            $2a$10$wKx5E... $hash = \text{bcrypt}(pass, salt)$
+            {"$2a$10$wKx5E... | hash = bcrypt(pass, salt)"}
           </div>
         </div>
 

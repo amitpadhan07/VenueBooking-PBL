@@ -30,7 +30,7 @@ export async function GET(request: NextRequest) {
 
     if (!isSystemAdmin && !targetEmployeeId && roleHeader?.toLowerCase() === 'employee') {
       const emp = await prisma.employee.findFirst({ where: { status: 'ACTIVE' } })
-      targetEmployeeId = emp?.employee_id
+      targetEmployeeId = emp?.employee_id ?? null
     }
 
     let venueFilter: any = {}
