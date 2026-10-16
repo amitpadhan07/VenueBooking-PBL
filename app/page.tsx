@@ -20,13 +20,18 @@ import {
   Sparkles,
   Users,
   X,
-  AlertCircle
+  AlertCircle,
+  UserCheck,
 } from 'lucide-react'
-import ProcessSchedulerSimulator from '@/components/os/ProcessSchedulerSimulator'
+import OSAcademicLab from '@/components/os/OSAcademicLab'
 import DBMSAcademicLab from '@/components/dbms/DBMSAcademicLab'
+import VenueAuthorityPanel from '@/components/admin/VenueAuthorityPanel'
+import PendingApprovalsInbox from '@/components/employee/PendingApprovalsInbox'
+import AuditTrailViewer from '@/components/audit/AuditTrailViewer'
+import AuthDefenseWidget from '@/components/auth/AuthDefenseWidget'
 
 type Role = 'Student' | 'Employee' | 'Admin'
-type Section = 'overview' | 'bookings' | 'venues' | 'reports' | 'os' | 'dbms'
+type Section = 'overview' | 'bookings' | 'approvals' | 'venues' | 'authorities' | 'reports' | 'os' | 'dbms' | 'audit'
 
 type VenueItem = {
   _id: string
@@ -71,10 +76,13 @@ type Data = {
 const sections: Array<{ id: Section; label: string; icon: typeof LayoutDashboard; roles: Role[] }> = [
   { id: 'overview', label: 'Overview', icon: LayoutDashboard, roles: ['Student', 'Employee', 'Admin'] },
   { id: 'bookings', label: 'Bookings', icon: CalendarDays, roles: ['Student', 'Employee', 'Admin'] },
+  { id: 'approvals', label: 'Approvals Inbox', icon: UserCheck, roles: ['Employee', 'Admin'] },
   { id: 'venues', label: 'Venues', icon: Server, roles: ['Student', 'Employee', 'Admin'] },
+  { id: 'authorities', label: 'Venue Authorities', icon: ShieldCheck, roles: ['Employee', 'Admin'] },
   { id: 'reports', label: 'Reports', icon: BarChart3, roles: ['Employee', 'Admin'] },
-  { id: 'os', label: 'OS Simulator', icon: MonitorCog, roles: ['Student', 'Employee', 'Admin'] },
+  { id: 'os', label: 'OS Simulator Suite', icon: MonitorCog, roles: ['Student', 'Employee', 'Admin'] },
   { id: 'dbms', label: 'DBMS Concepts', icon: Database, roles: ['Student', 'Employee', 'Admin'] },
+  { id: 'audit', label: 'Audit Trail', icon: Activity, roles: ['Employee', 'Admin'] },
 ]
 
 function Empty({
@@ -185,6 +193,9 @@ function Overview({ data, role, go }: { data: Data; role: Role; go: (section: Se
         <Metric label="Pending Review" value={data.metrics.pending} icon={Clock3} />
         <Metric label="Venue Active Rate" value={`${data.metrics.utilization}%`} icon={Server} />
       </div>
+
+      {/* Akshat Defense - Live JWT & RBAC Session Status */}
+      <AuthDefenseWidget currentRole={role} currentName={data.identity.name} />
 
       <div className="grid gap-6 xl:grid-cols-[1.4fr_0.6fr]">
         <section className="rounded-2xl border border-border bg-card">
@@ -538,6 +549,10 @@ function App() {
             <Overview data={data} role={role} go={setSection} />
           ) : section === 'bookings' ? (
             <Bookings data={data} role={role} refresh={refresh} />
+          ) : section === 'approvals' ? (
+            <SimpleSection title="Pending Approvals Inbox" eyebrow="Authority Enforcement">
+              <PendingApprovalsInbox role={role} onActionSuccess={refresh} />
+            </SimpleSection>
           ) : section === 'venues' ? (
             <SimpleSection title="Venues" eyebrow="Campus inventory">
               <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
@@ -560,6 +575,10 @@ function App() {
                 )}
               </div>
             </SimpleSection>
+          ) : section === 'authorities' ? (
+            <SimpleSection title="Venue Authority Matrix" eyebrow="Administrative Delegation">
+              <VenueAuthorityPanel role={role} />
+            </SimpleSection>
           ) : section === 'reports' ? (
             <SimpleSection title="Reports" eyebrow="Insights">
               <div className="grid gap-4 sm:grid-cols-3">
@@ -573,8 +592,12 @@ function App() {
               />
             </SimpleSection>
           ) : section === 'os' ? (
-            <SimpleSection title="OS Process Scheduling Lab" eyebrow="Operating Systems Lab">
-              <ProcessSchedulerSimulator />
+            <SimpleSection title="Operating Systems Academic Lab" eyebrow="OS Simulation Suite">
+              <OSAcademicLab />
+            </SimpleSection>
+          ) : section === 'audit' ? (
+            <SimpleSection title="System Audit Trail" eyebrow="Non-Repudiation & Security Log">
+              <AuditTrailViewer />
             </SimpleSection>
           ) : (
             <SimpleSection title="DBMS Concepts & SQL Lab" eyebrow="Data Systems Lab">
