@@ -100,7 +100,8 @@ export async function GET(request: NextRequest) {
  * 3. Temporal Constraints (start_time < end_time, event_date >= CURRENT_DATE)
  * 4. Mathematical Interval Overlap:
  *    Conflict <=> (S_exist < E_req) AND (E_exist > S_req)
- * 5. Pure SQL Execution ($queryRaw & $executeRaw)
+ * 5. Venue-row locking serializes concurrent requests; booking, notification, and audit writes are atomic.
+ * 6. Pure SQL Execution ($queryRaw & $executeRaw)
  */
 export async function POST(request: NextRequest) {
   try {
@@ -116,24 +117,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // 1. Verify venue existence and ACTIVE status using SQL
-    const venues = await prisma.$queryRaw<Array<{ venue_id: string; venue_name: string; capacity: number; status: string }>>`
-      SELECT venue_id, venue_name, capacity, status FROM venues WHERE venue_id = ${venueId} LIMIT 1
-    `
-    const venue = venues[0]
-
-    if (!venue) {
-      return NextResponse.json({ error: 'Selected venue does not exist in the database.' }, { status: 404 })
-    }
-
-    if (venue.status !== 'ACTIVE') {
-      return NextResponse.json(
-        { error: `Venue '${venue.venue_name}' is currently ${venue.status.toLowerCase()} and cannot be reserved.` },
-        { status: 400 }
-      )
-    }
-
-    // 2. Resolve requester user using SQL
+    // 1. Resolve requester user using SQL
     let user = null
     if (authUser?.userId) {
       const users = await prisma.$queryRaw<Array<{ user_id: string; name: string; email: string; department: string }>>`
@@ -166,7 +150,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // 3. Date & Time Validation Rules
+    // 2. Date & Time Validation Rules
     const startDate = new Date(startAt)
     const endDate = new Date(endAt)
 
@@ -196,105 +180,135 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // 4. Attendee Capacity Validation Rules
-    const attendeesNum = Number(expectedAttendees) || 50
-    if (attendeesNum <= 0) {
+    // 3. Attendee validation; venue capacity is checked while holding the venue lock below.
+    const attendeesNum = Number(expectedAttendees ?? 50)
+    if (!Number.isInteger(attendeesNum) || attendeesNum <= 0) {
       return NextResponse.json(
-        { error: 'Domain Constraint Violation: Expected attendees must be greater than 0.' },
+        { error: 'Domain Constraint Violation: Expected attendees must be a positive whole number.' },
         { status: 400 }
       )
     }
 
-    if (attendeesNum > venue.capacity) {
+    // Serialize all booking writers on the venue row, then check and create atomically.
+    const result = await prisma.$transaction(async (tx) => {
+      const venues = await tx.$queryRaw<Array<{ venue_id: string; venue_name: string; capacity: number; status: string }>>`
+        SELECT venue_id, venue_name, capacity, status
+        FROM venues
+        WHERE venue_id = ${venueId}
+        FOR UPDATE
+      `
+      const venue = venues[0]
+
+      if (!venue) {
+        return { kind: 'not-found' as const }
+      }
+      if (venue.status !== 'ACTIVE') {
+        return { kind: 'inactive' as const, venueName: venue.venue_name, status: venue.status }
+      }
+      if (attendeesNum > venue.capacity) {
+        return { kind: 'capacity' as const, capacity: venue.capacity }
+      }
+
+      const conflicts = await tx.$queryRaw<Array<{ booking_id: string; event_name: string; start_time: string; end_time: string }>>`
+        SELECT booking_id, event_name, start_time, end_time
+        FROM bookings
+        WHERE venue_id = ${venue.venue_id}
+          AND event_date = ${eventDate}::date
+          AND status IN ('PENDING'::"BookingStatus", 'APPROVED'::"BookingStatus")
+          AND start_time < ${endTimeStr}
+          AND end_time > ${startTimeStr}
+        LIMIT 1
+      `
+
+      if (conflicts.length > 0) {
+        return { kind: 'conflict' as const, venueName: venue.venue_name, conflict: conflicts[0] }
+      }
+
+      const inserted = await tx.$queryRaw<Array<{ booking_id: string; event_name: string; event_date: Date; start_time: string; end_time: string; status: string }>>`
+        INSERT INTO bookings (
+          booking_id, user_id, venue_id, event_name, event_description,
+          event_date, start_time, end_time, expected_attendees, status, created_at, updated_at
+        )
+        VALUES (
+          gen_random_uuid()::text, ${user.user_id}, ${venue.venue_id}, ${purpose}, ${description || null},
+          ${eventDate}::date, ${startTimeStr}, ${endTimeStr}, ${attendeesNum}, 'PENDING'::"BookingStatus", NOW(), NOW()
+        )
+        RETURNING booking_id, event_name, event_date, start_time, end_time, status
+      `
+      const booking = inserted[0]
+
+      await tx.$executeRaw`
+        INSERT INTO notifications (
+          notification_id, user_id, booking_id, title, message, notification_type, is_read, created_at
+        )
+        VALUES (
+          gen_random_uuid()::text, ${user.user_id}, ${booking.booking_id},
+          'Booking Request Submitted',
+          ${`Booking for ${venue.venue_name} on ${eventDate.toISOString().split('T')[0]} (${startTimeStr}-${endTimeStr}) is pending employee approval.`},
+          'BOOKING_SUBMITTED', false, NOW()
+        )
+      `
+
+      const auditJson = JSON.stringify({
+        venueId: venue.venue_id,
+        venueName: venue.venue_name,
+        slot: `${startTimeStr}-${endTimeStr}`,
+        attendees: attendeesNum,
+      })
+
+      await tx.$executeRaw`
+        INSERT INTO audit_logs (
+          log_id, user_id, action, entity_type, entity_id, details, created_at
+        )
+        VALUES (
+          gen_random_uuid()::text, ${user.user_id}, 'BOOKING_CREATED', 'BOOKING',
+          ${booking.booking_id}, ${auditJson}, NOW()
+        )
+      `
+
+      return { kind: 'created' as const, booking, venueName: venue.venue_name }
+    })
+
+    if (result.kind === 'not-found') {
+      return NextResponse.json({ error: 'Selected venue does not exist in the database.' }, { status: 404 })
+    }
+    if (result.kind === 'inactive') {
+      return NextResponse.json(
+        { error: `Venue '${result.venueName}' is currently ${result.status.toLowerCase()} and cannot be reserved.` },
+        { status: 400 }
+      )
+    }
+    if (result.kind === 'capacity') {
       return NextResponse.json(
         {
-          error: `Capacity Rule Violation: Expected attendees (${attendeesNum}) exceeds the venue's maximum capacity (${venue.capacity} seats).`,
+          error: `Capacity Rule Violation: Expected attendees (${attendeesNum}) exceeds the venue's maximum capacity (${result.capacity} seats).`,
         },
         { status: 400 }
       )
     }
-
-    // 5. Overlap Conflict Detection Query in SQL: (S_exist < E_req) AND (E_exist > S_req)
-    const conflicts = await prisma.$queryRaw<Array<{ booking_id: string; event_name: string; start_time: string; end_time: string }>>`
-      SELECT booking_id, event_name, start_time, end_time 
-      FROM bookings 
-      WHERE venue_id = ${venue.venue_id}
-        AND event_date = ${eventDate}::date
-        AND status IN ('PENDING'::"BookingStatus", 'APPROVED'::"BookingStatus")
-        AND start_time < ${endTimeStr}
-        AND end_time > ${startTimeStr}
-      LIMIT 1
-    `
-
-    if (conflicts.length > 0) {
-      const conflict = conflicts[0]
+    if (result.kind === 'conflict') {
       return NextResponse.json(
         {
-          error: `Conflict: Venue '${venue.venue_name}' is already reserved for '${conflict.event_name}' between ${conflict.start_time} and ${conflict.end_time} on ${eventDate.toISOString().split('T')[0]}.`,
-          conflictId: conflict.booking_id,
+          error: `Conflict: Venue '${result.venueName}' is already reserved for '${result.conflict.event_name}' between ${result.conflict.start_time} and ${result.conflict.end_time} on ${eventDate.toISOString().split('T')[0]}.`,
+          conflictId: result.conflict.booking_id,
         },
         { status: 409 }
       )
     }
 
-    // 6. Insert booking using Pure SQL
-    const inserted = await prisma.$queryRaw<Array<{ booking_id: string; event_name: string; event_date: Date; start_time: string; end_time: string; status: string }>>`
-      INSERT INTO bookings (
-        booking_id, user_id, venue_id, event_name, event_description, 
-        event_date, start_time, end_time, expected_attendees, status, created_at, updated_at
-      )
-      VALUES (
-        gen_random_uuid()::text, ${user.user_id}, ${venue.venue_id}, ${purpose}, ${description || null},
-        ${eventDate}::date, ${startTimeStr}, ${endTimeStr}, ${attendeesNum}, 'PENDING'::"BookingStatus", NOW(), NOW()
-      )
-      RETURNING booking_id, event_name, event_date, start_time, end_time, status
-    `
-    const booking = inserted[0]
-
-    // 7. Dispatch in-app transactional notification using SQL
-    await prisma.$executeRaw`
-      INSERT INTO notifications (
-        notification_id, user_id, booking_id, title, message, notification_type, is_read, created_at
-      )
-      VALUES (
-        gen_random_uuid()::text, ${user.user_id}, ${booking.booking_id},
-        'Booking Request Submitted',
-        ${`Booking for ${venue.venue_name} on ${eventDate.toISOString().split('T')[0]} (${startTimeStr}-${endTimeStr}) is pending employee approval.`},
-        'BOOKING_SUBMITTED', false, NOW()
-      )
-    `
-
-    // 8. Write Audit Log using SQL
-    const auditJson = JSON.stringify({
-      venueId: venue.venue_id,
-      venueName: venue.venue_name,
-      slot: `${startTimeStr}-${endTimeStr}`,
-      attendees: attendeesNum,
-    })
-
-    await prisma.$executeRaw`
-      INSERT INTO audit_logs (
-        log_id, user_id, action, entity_type, entity_id, details, created_at
-      )
-      VALUES (
-        gen_random_uuid()::text, ${user.user_id}, 'BOOKING_CREATED', 'BOOKING',
-        ${booking.booking_id}, ${auditJson}, NOW()
-      )
-    `
-
     return NextResponse.json({
       success: true,
       booking: {
-        id: booking.booking_id,
-        _id: booking.booking_id,
-        purpose: booking.event_name,
-        venueName: venue.venue_name,
+        id: result.booking.booking_id,
+        _id: result.booking.booking_id,
+        purpose: result.booking.event_name,
+        venueName: result.venueName,
         requesterName: user.name,
         date: eventDate.toISOString().split('T')[0],
-        startTime: startTimeStr,
-        endTime: endTimeStr,
+        startTime: result.booking.start_time,
+        endTime: result.booking.end_time,
         attendees: attendeesNum,
-        status: booking.status,
+        status: result.booking.status,
       },
     }, { status: 201 })
   } catch (error: any) {
