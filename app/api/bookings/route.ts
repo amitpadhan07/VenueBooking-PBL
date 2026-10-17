@@ -64,21 +64,35 @@ export async function GET(request: NextRequest) {
         booking_id: b.booking_id,
         purpose: b.event_name,
         eventName: b.event_name,
+        event_name: b.event_name,
         description: b.event_description,
+        event_description: b.event_description,
         venueId: b.venue_id,
+        venue_id: b.venue_id,
         venueName: b.venue_name,
+        venue_name: b.venue_name,
         location: b.location,
         venueLocation: b.location,
         venueCapacity: b.capacity,
+        capacity: b.capacity,
         requesterId: b.user_id,
+        user_id: b.user_id,
         requesterName: b.requester_name,
+        requester_name: b.requester_name,
+        requesterEmail: b.requester_email,
+        requester_email: b.requester_email,
         department: b.department,
         date: typeof b.event_date === 'string' ? b.event_date.split('T')[0] : b.event_date,
+        event_date: typeof b.event_date === 'string' ? b.event_date.split('T')[0] : b.event_date,
         startTime: b.start_time,
+        start_time: b.start_time,
         endTime: b.end_time,
+        end_time: b.end_time,
         attendees: b.expected_attendees,
+        expected_attendees: b.expected_attendees,
         status: b.status,
         createdAt: b.created_at,
+        created_at: b.created_at,
       })),
     })
   } catch (error: any) {
@@ -108,11 +122,22 @@ export async function POST(request: NextRequest) {
     const authUser = await getAuthUser(request)
     const roleHeader = request.headers.get('x-demo-role') || 'Student'
     const body = await request.json()
-    const { venueId, purpose, description, startAt, endAt, expectedAttendees } = body
+    const venueId = body.venueId
+    const purpose = (body.purpose || body.eventName || body.title || '').trim()
+    const description = (body.description || body.eventDescription || '').trim()
+    const expectedAttendees = body.expectedAttendees
+
+    let startAt = body.startAt
+    let endAt = body.endAt
+
+    if ((!startAt || !endAt) && body.eventDate && body.startTime && body.endTime) {
+      startAt = `${body.eventDate}T${body.startTime}:00`
+      endAt = `${body.eventDate}T${body.endTime}:00`
+    }
 
     if (!venueId || !purpose || !startAt || !endAt) {
       return NextResponse.json(
-        { error: 'All mandatory fields (venueId, purpose, startAt, endAt) are required.' },
+        { error: 'All mandatory fields (venue, event title/purpose, date, and start/end time) are required.' },
         { status: 400 }
       )
     }
@@ -155,17 +180,28 @@ export async function POST(request: NextRequest) {
     const endDate = new Date(endAt)
 
     if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
-      return NextResponse.json({ error: 'Invalid startAt or endAt timestamp format.' }, { status: 400 })
+      return NextResponse.json({ error: 'Invalid start time or end time format.' }, { status: 400 })
     }
 
-    const eventDate = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate())
-    const startTimeStr = startDate.toTimeString().slice(0, 5) // "HH:MM"
-    const endTimeStr = endDate.toTimeString().slice(0, 5)     // "HH:MM"
+    let eventDate: Date
+    let startTimeStr: string
+    let endTimeStr: string
+
+    if (body.eventDate && body.startTime && body.endTime) {
+      const parts = String(body.eventDate).split('-').map(Number)
+      eventDate = new Date(parts[0], parts[1] - 1, parts[2])
+      startTimeStr = String(body.startTime).trim()
+      endTimeStr = String(body.endTime).trim()
+    } else {
+      eventDate = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate())
+      startTimeStr = startDate.toTimeString().slice(0, 5) // "HH:MM"
+      endTimeStr = endDate.toTimeString().slice(0, 5)     // "HH:MM"
+    }
 
     // Rule: start_time < end_time
-    if (startDate >= endDate || startTimeStr >= endTimeStr) {
+    if (startTimeStr >= endTimeStr) {
       return NextResponse.json(
-        { error: 'Temporal Constraint Violation: Start time must precede end time.' },
+        { error: 'Start time must precede end time.' },
         { status: 400 }
       )
     }

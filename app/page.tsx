@@ -1,779 +1,384 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import React, { useState, useEffect } from 'react'
+import Link from 'next/link'
+import Navbar from '@/components/layout/Navbar'
+import Footer from '@/components/layout/Footer'
+import { useAuth } from '@/components/auth/AuthContext'
 import {
-  Activity,
-  BarChart3,
+  Building2,
   CalendarDays,
-  CheckCircle2,
-  Clock3,
-  Database,
-  GraduationCap,
-  LayoutDashboard,
-  Menu,
-  MonitorCog,
-  Plus,
-  RefreshCw,
-  Search,
-  Server,
   ShieldCheck,
+  CheckCircle2,
+  Lock,
+  ArrowRight,
   Sparkles,
+  MapPin,
   Users,
-  X,
-  AlertCircle,
-  UserCheck,
+  Search,
+  Filter,
+  Activity,
+  Layers,
+  GraduationCap,
+  Clock3,
 } from 'lucide-react'
-import OSAcademicLab from '@/components/os/OSAcademicLab'
-import DBMSAcademicLab from '@/components/dbms/DBMSAcademicLab'
-import VenueAuthorityPanel from '@/components/admin/VenueAuthorityPanel'
-import PendingApprovalsInbox from '@/components/employee/PendingApprovalsInbox'
-import AuditTrailViewer from '@/components/audit/AuditTrailViewer'
-import AuthDefenseWidget from '@/components/auth/AuthDefenseWidget'
 
-type Role = 'Student' | 'Employee' | 'Admin'
-type Section = 'overview' | 'bookings' | 'approvals' | 'venues' | 'authorities' | 'reports' | 'os' | 'dbms' | 'audit'
-
-type VenueItem = {
-  _id: string
+interface VenueItem {
   id: string
+  venue_id: string
   name: string
-  type: string
-  capacity: number
+  venue_name: string
   location: string
-  status: string
-}
-
-type BookingItem = {
-  _id: string
-  id: string
-  purpose: string
-  venueName: string
-  venueId: string
-  requesterName: string
-  requesterId: string
-  status: string
-  date?: string
-  startTime?: string
-  endTime?: string
-}
-
-type NotificationItem = {
-  _id: string
-  id: string
-  title: string
-  message: string
+  capacity: number
   type: string
+  venue_type: string
+  description?: string
+  status: 'ACTIVE' | 'MAINTENANCE' | 'INACTIVE'
 }
 
-type Data = {
-  identity: { role: Role; name: string }
-  bookings: BookingItem[]
-  venues: VenueItem[]
-  notifications: NotificationItem[]
-  metrics: { total: number; approved: number; pending: number; utilization: number }
-}
+export default function HomePage() {
+  const { user, isAuthenticated, role } = useAuth()
+  const [venues, setVenues] = useState<VenueItem[]>([])
+  const [loadingVenues, setLoadingVenues] = useState(true)
+  const [venueSearch, setVenueSearch] = useState('')
+  const [selectedType, setSelectedType] = useState('ALL')
 
-const sections: Array<{ id: Section; label: string; icon: typeof LayoutDashboard; roles: Role[] }> = [
-  { id: 'overview', label: 'Overview', icon: LayoutDashboard, roles: ['Student', 'Employee', 'Admin'] },
-  { id: 'bookings', label: 'Bookings', icon: CalendarDays, roles: ['Student', 'Employee', 'Admin'] },
-  { id: 'approvals', label: 'Approvals Inbox', icon: UserCheck, roles: ['Employee', 'Admin'] },
-  { id: 'venues', label: 'Venues', icon: Server, roles: ['Student', 'Employee', 'Admin'] },
-  { id: 'authorities', label: 'Venue Authorities', icon: ShieldCheck, roles: ['Employee', 'Admin'] },
-  { id: 'reports', label: 'Reports', icon: BarChart3, roles: ['Employee', 'Admin'] },
-  { id: 'os', label: 'OS Simulator Suite', icon: MonitorCog, roles: ['Student', 'Employee', 'Admin'] },
-  { id: 'dbms', label: 'DBMS Concepts', icon: Database, roles: ['Student', 'Employee', 'Admin'] },
-  { id: 'audit', label: 'Audit Trail', icon: Activity, roles: ['Employee', 'Admin'] },
-]
-
-function Empty({
-  title = 'No records yet',
-  text = 'Connect activity to this workspace and it will appear here.',
-}: {
-  title?: string
-  text?: string
-}) {
-  return (
-    <div className="rounded-2xl border border-dashed border-border bg-muted/20 p-10 text-center">
-      <p className="font-semibold">{title}</p>
-      <p className="mt-2 text-sm text-muted-foreground">{text}</p>
-    </div>
-  )
-}
-
-function Metric({
-  label,
-  value,
-  icon: Icon,
-}: {
-  label: string
-  value: string | number
-  icon: typeof Activity
-}) {
-  return (
-    <div className="rounded-2xl border border-border bg-card p-5">
-      <Icon className="mb-4 size-5 text-primary" />
-      <p className="text-sm text-muted-foreground">{label}</p>
-      <strong className="mt-1 block text-3xl tracking-tight">{value}</strong>
-    </div>
-  )
-}
-
-function BookingRows({ bookings }: { bookings: BookingItem[] }) {
-  const [filter, setFilter] = useState<'ALL' | 'PENDING' | 'APPROVED' | 'REJECTED'>('ALL')
-  const [searchTerm, setSearchTerm] = useState('')
-
-  const filteredBookings = useMemo(() => {
-    return bookings.filter((b) => {
-      const matchesFilter = filter === 'ALL' || b.status?.toUpperCase() === filter
-      const matchesSearch =
-        !searchTerm ||
-        b.purpose?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        b.venueName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        b.requesterName?.toLowerCase().includes(searchTerm.toLowerCase())
-      return matchesFilter && matchesSearch
-    })
-  }, [bookings, filter, searchTerm])
-
-  const getStatusBadge = (status: string) => {
-    switch (status?.toUpperCase()) {
-      case 'APPROVED':
-        return 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20'
-      case 'REJECTED':
-      case 'CANCELLED':
-        return 'bg-rose-500/15 text-rose-600 dark:text-rose-400 border border-rose-500/20'
-      case 'PENDING':
-      default:
-        return 'bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/20'
+  useEffect(() => {
+    async function fetchVenues() {
+      try {
+        const res = await fetch('/api/venues')
+        if (res.ok) {
+          const data = await res.json()
+          setVenues(data.venues || [])
+        }
+      } catch (err) {
+        console.error('Error fetching venues on home page:', err)
+      } finally {
+        setLoadingVenues(false)
+      }
     }
-  }
+    fetchVenues()
+  }, [])
 
-  return (
-    <div className="space-y-3 p-4">
-      <div className="flex flex-wrap items-center justify-between gap-3 pb-2">
-        <div className="flex items-center gap-1.5 rounded-xl bg-muted/40 p-1 border border-border">
-          {(['ALL', 'PENDING', 'APPROVED', 'REJECTED'] as const).map((tab) => (
-            <button
-              key={tab}
-              onClick={() => setFilter(tab)}
-              className={`rounded-lg px-3 py-1 text-xs font-medium transition-all ${
-                filter === tab
-                  ? 'bg-background text-foreground shadow-sm font-semibold'
-                  : 'text-muted-foreground hover:text-foreground'
-              }`}
-            >
-              {tab === 'ALL' ? 'All Records' : tab}
-            </button>
-          ))}
-        </div>
-        <div className="relative min-w-[200px]">
-          <Search className="absolute left-3 top-2.5 size-3.5 text-muted-foreground" />
-          <input
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            placeholder="Search event or venue..."
-            className="w-full rounded-xl border border-input bg-background pl-8 pr-3 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-primary"
-          />
-        </div>
-      </div>
-
-      {!filteredBookings.length ? (
-        <Empty title="No bookings found" text="No records match your selected filter." />
-      ) : (
-        <div className="overflow-auto rounded-xl border border-border/60">
-          <table className="w-full min-w-[620px] text-left text-sm">
-            <thead className="border-b border-border bg-muted/20 text-xs text-muted-foreground font-semibold">
-              <tr>
-                <th className="p-3.5">Purpose / Event</th>
-                <th className="p-3.5">Venue Facility</th>
-                <th className="p-3.5">Requester</th>
-                <th className="p-3.5">Scheduled Slot</th>
-                <th className="p-3.5">Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredBookings.map((booking) => (
-                <tr className="border-b border-border/70 hover:bg-muted/40 transition-colors" key={booking._id || booking.id}>
-                  <td className="p-3.5 font-medium">{booking.purpose}</td>
-                  <td className="p-3.5 text-foreground/80">{booking.venueName || booking.venueId}</td>
-                  <td className="p-3.5 text-muted-foreground">{booking.requesterName || booking.requesterId}</td>
-                  <td className="p-3.5 text-xs text-muted-foreground">
-                    {booking.date ? `${booking.date} (${booking.startTime || ''}-${booking.endTime || ''})` : 'Scheduled'}
-                  </td>
-                  <td className="p-3.5">
-                    <span className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-medium ${getStatusBadge(booking.status)}`}>
-                      {booking.status}
-                    </span>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </div>
-  )
-}
-
-function Overview({ data, role, go }: { data: Data; role: Role; go: (section: Section) => void }) {
-  return (
-    <div className="space-y-6">
-      <div className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-primary">{role} workspace</p>
-          <h1 className="mt-2 text-4xl font-semibold tracking-tight">Good morning, {data.identity.name}.</h1>
-          <p className="mt-2 text-muted-foreground">Connected to PostgreSQL via Prisma ORM.</p>
-        </div>
-        {role !== 'Employee' && (
-          <button
-            className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-primary-foreground font-medium shadow hover:opacity-90 transition-opacity"
-            onClick={() => go('bookings')}
-          >
-            <Plus className="size-4" /> New booking
-          </button>
-        )}
-      </div>
-
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <Metric label="Total Bookings" value={data.metrics.total} icon={CalendarDays} />
-        <Metric label="Approved" value={data.metrics.approved} icon={CheckCircle2} />
-        <Metric label="Pending Review" value={data.metrics.pending} icon={Clock3} />
-        <Metric label="Venue Active Rate" value={`${data.metrics.utilization}%`} icon={Server} />
-      </div>
-
-      {/* Akshat Defense - Live JWT & RBAC Session Status */}
-      <AuthDefenseWidget currentRole={role} currentName={data.identity.name} />
-
-      <div className="grid gap-6 xl:grid-cols-[1.4fr_0.6fr]">
-        <section className="rounded-2xl border border-border bg-card">
-          <div className="flex items-center justify-between border-b border-border p-5">
-            <div>
-              <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Operational view</p>
-              <h2 className="mt-1 text-xl font-semibold">Recent Bookings</h2>
-            </div>
-            <button className="text-sm text-primary font-medium hover:underline" onClick={() => go('bookings')}>
-              View all
-            </button>
-          </div>
-          <BookingRows bookings={data.bookings.slice(0, 6)} />
-        </section>
-
-        <section className="rounded-2xl border border-border bg-card p-5">
-          <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Notifications</p>
-          <h2 className="mt-1 text-xl font-semibold">Action Center</h2>
-          <div className="mt-5 space-y-4">
-            {data.notifications.length ? (
-              data.notifications.map((note) => (
-                <div className="border-l-2 border-primary pl-3 py-1" key={note._id || note.id}>
-                  <p className="font-medium text-sm">{note.title ?? 'Workspace update'}</p>
-                  <p className="mt-0.5 text-xs text-muted-foreground">{note.message ?? 'A new notification is available.'}</p>
-                </div>
-              ))
-            ) : (
-              <Empty title="All caught up" text="Unread notifications will appear here." />
-            )}
-          </div>
-        </section>
-      </div>
-    </div>
-  )
-}
-
-function Bookings({ data, role, refresh }: { data: Data; role: Role; refresh: () => void }) {
-  const [open, setOpen] = useState(false)
-  const [message, setMessage] = useState('')
-  const [isConflict, setIsConflict] = useState(false)
-  const [isSubmitting, setIsSubmitting] = useState(false)
-  const [form, setForm] = useState({
-    venueId: data.venues[0]?._id || data.venues[0]?.id || '',
-    purpose: '',
-    startAt: '',
-    endAt: '',
-    expectedAttendees: 50,
+  const filteredVenues = venues.filter((v) => {
+    const vType = v.type || v.venue_type || ''
+    const vName = v.name || v.venue_name || ''
+    const vLoc = v.location || ''
+    const q = (venueSearch || '').toLowerCase().trim()
+    const matchesType = selectedType === 'ALL' || vType.toLowerCase() === (selectedType || '').toLowerCase()
+    const matchesSearch = !q || vName.toLowerCase().includes(q) || vLoc.toLowerCase().includes(q)
+    return matchesType && matchesSearch
   })
 
-  // Synchronize default venueId if empty
-  useEffect(() => {
-    if (!form.venueId && data.venues.length > 0) {
-      setForm((prev) => ({ ...prev, venueId: data.venues[0]._id || data.venues[0].id }))
-    }
-  }, [data.venues, form.venueId])
-
-  const selectedVenue = useMemo(() => {
-    return data.venues.find((v) => (v._id || v.id) === form.venueId) || data.venues[0]
-  }, [data.venues, form.venueId])
-
-  // Helper for Samridhi's viva demonstration: pre-fills an active slot to demonstrate 409 Conflict
-  const triggerConflictDemo = () => {
-    const existing = data.bookings.find((b) => b.status === 'PENDING' || b.status === 'APPROVED')
-    if (existing && existing.date && existing.startTime && existing.endTime) {
-      const targetVenue = data.venues.find((v) => v.name === existing.venueName) || data.venues[0]
-      if (targetVenue) {
-        setForm({
-          venueId: targetVenue._id || targetVenue.id,
-          purpose: 'Viva Overlap Test: Annual Tech Symposium',
-          startAt: `${existing.date}T${existing.startTime}:00`,
-          endAt: `${existing.date}T${existing.endTime}:00`,
-          expectedAttendees: Math.min(50, targetVenue.capacity),
-        })
-        setOpen(true)
-        setMessage('Pre-filled with an active occupied slot. Click "Submit request" to demonstrate the HTTP 409 Conflict rejection!')
-        setIsConflict(false)
-        return
-      }
-    }
-
-    // Fallback tomorrow slot
-    const tomorrow = new Date()
-    tomorrow.setDate(tomorrow.getDate() + 1)
-    const dateStr = tomorrow.toISOString().split('T')[0]
-    setForm({
-      venueId: data.venues[0]?._id || data.venues[0]?.id || '',
-      purpose: 'Simulated Overlap Event',
-      startAt: `${dateStr}T10:00:00`,
-      endAt: `${dateStr}T12:00:00`,
-      expectedAttendees: 50,
-    })
-    setOpen(true)
-  }
-
-  async function submit() {
-    setMessage('')
-    setIsConflict(false)
-    if (!form.venueId) {
-      setMessage('Please select a venue.')
-      return
-    }
-    if (!form.purpose) {
-      setMessage('Please enter event purpose.')
-      return
-    }
-    if (!form.startAt || !form.endAt) {
-      setMessage('Please enter both start and end date/time.')
-      return
-    }
-    if (selectedVenue && form.expectedAttendees > selectedVenue.capacity) {
-      setMessage(`Capacity Rule Violation: Expected attendees (${form.expectedAttendees}) exceeds venue capacity (${selectedVenue.capacity}).`)
-      return
-    }
-
-    setIsSubmitting(true)
-    try {
-      const response = await fetch('/api/bookings', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', 'x-demo-role': role },
-        body: JSON.stringify(form),
-      })
-      const payload = await response.json().catch(() => ({ error: 'Invalid response from server' }))
-      if (!response.ok) {
-        if (response.status === 409) {
-          setIsConflict(true)
-        }
-        setMessage(payload.error || 'Failed to submit booking')
-        return
-      }
-      setOpen(false)
-      setForm({
-        venueId: data.venues[0]?._id || data.venues[0]?.id || '',
-        purpose: '',
-        startAt: '',
-        endAt: '',
-        expectedAttendees: 50,
-      })
-      refresh()
-    } catch (err: any) {
-      setMessage(err.message || 'Network error occurred')
-    } finally {
-      setIsSubmitting(false)
-    }
-  }
+  const venueTypes = ['ALL', 'Auditorium', 'Seminar Hall', 'Conference Room', 'Computer Lab']
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-primary">Resource management</p>
-          <h1 className="mt-2 text-4xl font-semibold">Bookings</h1>
-          <p className="mt-2 text-muted-foreground">
-            {role === 'Employee'
-              ? 'Review and manage bookings assigned to your venues.'
-              : 'Create and track bookings directly stored in PostgreSQL.'}
-          </p>
-        </div>
-        {role !== 'Employee' && (
-          <div className="flex items-center gap-2">
-            <button
-              className="inline-flex items-center gap-2 rounded-xl border border-primary/30 bg-primary/10 px-3.5 py-2.5 text-xs font-medium text-primary hover:bg-primary/20 transition-colors"
-              onClick={triggerConflictDemo}
-              title="Pre-fill an overlapping slot to test 409 conflict detection"
-            >
-              <Sparkles className="size-3.5" />
-              <span>Simulate Conflict Test</span>
-            </button>
-            <button
-              className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-primary-foreground font-medium shadow hover:opacity-90 transition-opacity"
-              onClick={() => {
-                setOpen(!open)
-                setMessage('')
-                setIsConflict(false)
-              }}
-            >
-              <Plus className="size-4" /> Create booking
-            </button>
-          </div>
-        )}
-      </div>
+    <div className="min-h-screen flex flex-col bg-background text-foreground">
+      <Navbar />
 
-      {/* Samridhi Defense - Mathematical Interval Overlap Engine Banner */}
-      <div className="rounded-2xl border border-primary/20 bg-primary/5 p-4 flex flex-col md:flex-row items-start md:items-center justify-between gap-3 text-xs">
-        <div className="space-y-1">
-          <div className="flex items-center gap-2">
-            <span className="font-semibold text-foreground">Samridhi Defense: Mathematical Interval Overlap Engine</span>
-            <span className="rounded-full bg-primary/15 px-2 py-0.5 font-mono text-[10px] text-primary font-bold">
-              PostgreSQL B-Tree Seek
-            </span>
-          </div>
-          <p className="text-muted-foreground">
-            Collision Theorem: <code className="font-mono text-primary font-medium">{"(S_exist < E_req) ∧ (E_exist > S_req)"}</code> enforced on <code className="font-mono">idx_bookings_lookup</code>.
-          </p>
-        </div>
-        <div className="flex items-center gap-2 shrink-0">
-          <span className="text-[11px] text-muted-foreground">Capacity bounds & temporal guards active</span>
-        </div>
-      </div>
+      <main className="flex-1">
+        {/* HERO SECTION */}
+        <section className="relative overflow-hidden py-16 sm:py-24 lg:py-28 border-b border-border bg-gradient-to-b from-card/80 via-background to-background">
+          {/* Ambient Lighting Orbs */}
+          <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-primary/10 rounded-full blur-3xl pointer-events-none" />
+          <div className="absolute top-1/3 right-10 w-96 h-96 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none" />
 
-      {open && (
-        <div className="rounded-2xl border border-border bg-card p-6 shadow-sm space-y-4">
-          <div className="flex items-center justify-between border-b border-border pb-3">
-            <h3 className="text-lg font-semibold">Request Venue Allocation</h3>
-            {selectedVenue && (
-              <span className="rounded-full bg-muted px-2.5 py-1 text-xs text-muted-foreground font-mono">
-                Capacity: {selectedVenue.capacity} seats ({selectedVenue.type})
-              </span>
-            )}
-          </div>
+          <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 relative z-10 text-center space-y-8">
+            
+            {/* Pill Badge */}
+            <div className="inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/10 px-4 py-1.5 text-xs font-semibold text-primary shadow-sm">
+              <Sparkles className="h-4 w-4" />
+              <span>Campus Facility & Resource Scheduling Platform</span>
+            </div>
 
-          <div className="grid gap-4 md:grid-cols-2">
-            <label className="text-sm font-medium">
-              Venue
-              <select
-                className="mt-2 w-full rounded-xl border border-input bg-background p-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-                value={form.venueId}
-                onChange={(event) => setForm({ ...form, venueId: event.target.value })}
+            {/* Headline */}
+            <div className="max-w-4xl mx-auto space-y-4">
+              <h1 className="text-4xl font-extrabold tracking-tight sm:text-6xl lg:text-7xl">
+                Smart Campus Venue Booking & Operations Portal
+              </h1>
+              <p className="text-base sm:text-lg text-muted-foreground max-w-2xl mx-auto leading-relaxed">
+                Seamless reservations for auditoriums, seminar halls, and computer laboratories with instant verification and automated conflict prevention.
+              </p>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
+              <Link
+                href={isAuthenticated ? '/dashboard' : '/register'}
+                className="rounded-xl bg-primary px-6 py-3 text-sm font-semibold text-primary-foreground shadow-lg shadow-primary/25 hover:bg-primary/90 transition-all flex items-center gap-2 group"
               >
-                {data.venues.map((v) => (
-                  <option key={v._id || v.id} value={v._id || v.id}>
-                    {v.name} ({v.type} - Max Cap: {v.capacity})
-                  </option>
-                ))}
-              </select>
-            </label>
+                <span>{isAuthenticated ? 'Go to My Dashboard' : 'Get Started & Book Venue'}</span>
+                <ArrowRight className="h-4 w-4 group-hover:translate-x-1 transition-transform" />
+              </Link>
 
-            <label className="text-sm font-medium">
-              Purpose / Event Name
-              <input
-                className="mt-2 w-full rounded-xl border border-input bg-background p-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-                placeholder="e.g. ACM Guest Lecture"
-                value={form.purpose}
-                onChange={(event) => setForm({ ...form, purpose: event.target.value })}
-              />
-            </label>
-
-            <label className="text-sm font-medium">
-              Start Date & Time
-              <input
-                type="datetime-local"
-                className="mt-2 w-full rounded-xl border border-input bg-background p-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-                value={form.startAt}
-                onChange={(event) => setForm({ ...form, startAt: event.target.value })}
-              />
-            </label>
-
-            <label className="text-sm font-medium">
-              End Date & Time
-              <input
-                type="datetime-local"
-                className="mt-2 w-full rounded-xl border border-input bg-background p-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-                value={form.endAt}
-                onChange={(event) => setForm({ ...form, endAt: event.target.value })}
-              />
-            </label>
-
-            <label className="text-sm font-medium md:col-span-2">
-              <div className="flex items-center justify-between">
-                <span>Expected Attendees</span>
-                {selectedVenue && (
-                  <span className={`text-xs ${form.expectedAttendees > selectedVenue.capacity ? 'text-destructive font-bold' : 'text-muted-foreground'}`}>
-                    Venue Limit: {selectedVenue.capacity}
-                  </span>
-                )}
-              </div>
-              <input
-                type="number"
-                min="1"
-                max={selectedVenue?.capacity || 1000}
-                className="mt-2 w-full rounded-xl border border-input bg-background p-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-                placeholder="e.g. 50"
-                value={form.expectedAttendees}
-                onChange={(event) => setForm({ ...form, expectedAttendees: Number(event.target.value) })}
-              />
-            </label>
-          </div>
-
-          {message && (
-            <div
-              className={`flex items-start gap-2.5 rounded-xl p-3.5 text-sm border ${
-                isConflict
-                  ? 'bg-rose-500/10 border-rose-500/30 text-rose-600 dark:text-rose-400'
-                  : 'bg-destructive/10 border-destructive/20 text-destructive'
-              }`}
-            >
-              <AlertCircle className="size-4 shrink-0 mt-0.5" />
-              <div className="space-y-1">
-                <p className="font-semibold">{isConflict ? 'HTTP 409 Conflict Detected' : 'Validation Error'}</p>
-                <p className="text-xs leading-relaxed">{message}</p>
-              </div>
-            </div>
-          )}
-
-          <div className="mt-6 flex justify-end gap-3 pt-2 border-t border-border">
-            <button
-              className="rounded-xl border border-border px-4 py-2 text-sm font-medium hover:bg-muted"
-              onClick={() => setOpen(false)}
-            >
-              Cancel
-            </button>
-            <button
-              disabled={isSubmitting}
-              className="rounded-xl bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50"
-              onClick={submit}
-            >
-              {isSubmitting ? 'Submitting...' : 'Submit request'}
-            </button>
-          </div>
-        </div>
-      )}
-
-      <section className="rounded-2xl border border-border bg-card">
-        <div className="flex items-center gap-3 border-b border-border p-5">
-          <Search className="size-4 text-muted-foreground" />
-          <span className="text-sm text-muted-foreground">PostgreSQL-backed booking records ({data.bookings.length} entries)</span>
-        </div>
-        <BookingRows bookings={data.bookings} />
-      </section>
-    </div>
-  )
-}
-
-function SimpleSection({ title, eyebrow, children }: { title: string; eyebrow: string; children: React.ReactNode }) {
-  return (
-    <div className="space-y-6">
-      <div>
-        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-primary">{eyebrow}</p>
-        <h1 className="mt-2 text-4xl font-semibold">{title}</h1>
-      </div>
-      {children}
-    </div>
-  )
-}
-
-function App() {
-  const [role, setRole] = useState<Role>('Admin')
-  const [section, setSection] = useState<Section>('overview')
-  const [data, setData] = useState<Data | null>(null)
-  const [error, setError] = useState('')
-  const [loading, setLoading] = useState(true)
-  const [mobile, setMobile] = useState(false)
-
-  const refresh = () => {
-    setLoading(true)
-    fetch(`/api/dashboard?role=${role}`)
-      .then(async (response) => {
-        const payload = await response.json().catch(() => ({
-          error: `Server responded with status ${response.status} (${response.statusText})`,
-        }))
-        if (!response.ok) throw new Error(payload.error || 'Failed to fetch dashboard data')
-        setData(payload)
-        setError('')
-      })
-      .catch((reason) => setError(reason.message || 'Unknown network error'))
-      .finally(() => setLoading(false))
-  }
-
-  useEffect(() => {
-    refresh()
-  }, [role])
-
-  const allowed = useMemo(() => sections.filter((item) => item.roles.includes(role)), [role])
-
-  return (
-    <main className="min-h-screen bg-background text-foreground">
-      {/* Sidebar */}
-      <aside
-        className={`fixed inset-y-0 left-0 z-20 w-72 border-r border-border bg-card p-5 transition-transform lg:translate-x-0 ${
-          mobile ? 'translate-x-0' : '-translate-x-full'
-        }`}
-      >
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="rounded-xl bg-primary p-2 text-primary-foreground">
-              <Sparkles className="size-4" />
-            </div>
-            <div>
-              <strong>CampusFlow</strong>
-              <span className="block text-xs text-muted-foreground">PostgreSQL workspace</span>
-            </div>
-          </div>
-          <button className="lg:hidden" onClick={() => setMobile(false)}>
-            <X />
-          </button>
-        </div>
-
-        <div className="mt-8 flex items-center gap-3 rounded-xl bg-muted p-3">
-          <GraduationCap className="size-5 text-primary" />
-          <div>
-            <strong className="text-sm">Role dashboard</strong>
-            <span className="block text-xs text-muted-foreground">{role} access</span>
-          </div>
-        </div>
-
-        <nav className="mt-6 space-y-1">
-          {allowed.map(({ id, label, icon: Icon }) => (
-            <button
-              key={id}
-              className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors ${
-                section === id
-                  ? 'bg-primary text-primary-foreground'
-                  : 'text-muted-foreground hover:bg-muted hover:text-foreground'
-              }`}
-              onClick={() => {
-                setSection(id)
-                setMobile(false)
-              }}
-            >
-              <Icon className="size-4" />
-              {label}
-            </button>
-          ))}
-        </nav>
-
-        <div className="mt-10 rounded-xl border border-border p-3 text-sm">
-          <ShieldCheck className="mb-2 size-4 text-primary" />
-          <p className="font-medium">Identity & RBAC Boundary</p>
-          <p className="mt-1 text-xs text-muted-foreground">
-            Role switching demonstrates permissions across Students, Employees, and Admins.
-          </p>
-        </div>
-      </aside>
-
-      {/* Main Content Area */}
-      <section className="lg:pl-72">
-        <header className="sticky top-0 z-10 flex h-16 items-center justify-between border-b border-border bg-background/90 px-5 backdrop-blur md:px-8">
-          <button className="lg:hidden" onClick={() => setMobile(true)}>
-            <Menu />
-          </button>
-          <div className="hidden items-center gap-2 text-sm text-muted-foreground md:flex">
-            <span>Workspace</span>
-            <span>/</span>
-            <strong className="text-foreground">{sections.find((item) => item.id === section)?.label}</strong>
-          </div>
-          <label className="flex items-center gap-2 rounded-xl border border-border bg-card px-3 py-2 text-sm shadow-sm">
-            <Users className="size-4 text-muted-foreground" />
-            <select
-              value={role}
-              onChange={(event) => setRole(event.target.value as Role)}
-              className="bg-transparent outline-none cursor-pointer font-medium"
-            >
-              <option value="Student">Student</option>
-              <option value="Employee">Employee</option>
-              <option value="Admin">Admin</option>
-            </select>
-          </label>
-        </header>
-
-        <div className="mx-auto max-w-7xl p-5 md:p-8">
-          {error ? (
-            <div className="rounded-2xl border border-destructive/30 bg-destructive/10 p-6 text-foreground">
-              <div className="flex items-center gap-3">
-                <AlertCircle className="size-6 text-destructive" />
-                <p className="text-lg font-semibold text-destructive">Database Connection Unavailable</p>
-              </div>
-              <p className="mt-2 text-sm text-muted-foreground">{error}</p>
-              <button
-                className="mt-4 inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-primary-foreground text-sm font-medium hover:opacity-90 transition-opacity"
-                onClick={refresh}
+              <a
+                href="#venues"
+                className="rounded-xl border border-border bg-card px-6 py-3 text-sm font-semibold text-foreground hover:bg-muted transition-all"
               >
-                <RefreshCw className="size-4" /> Retry
-              </button>
+                Explore Campus Venues
+              </a>
+
+              {isAuthenticated && role === 'ADMIN' && (
+                <Link
+                  href="/admin"
+                  className="rounded-xl bg-purple-600 px-6 py-3 text-sm font-semibold text-white shadow-md hover:bg-purple-700 transition-all flex items-center gap-2"
+                >
+                  <ShieldCheck className="h-4 w-4" />
+                  Admin Suite
+                </Link>
+              )}
             </div>
-          ) : loading && !data ? (
-            <div className="rounded-2xl border border-border bg-card p-10 text-center text-muted-foreground animate-pulse">
-              Loading PostgreSQL workspace data…
+
+            {/* Micro Pillars */}
+            <div className="pt-8 border-t border-border/60 max-w-4xl mx-auto grid grid-cols-2 sm:grid-cols-4 gap-4 text-xs font-medium text-muted-foreground">
+              <div className="flex items-center justify-center gap-1.5">
+                <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+                <span>Zero Double Bookings</span>
+              </div>
+              <div className="flex items-center justify-center gap-1.5">
+                <Clock3 className="h-4 w-4 text-primary" />
+                <span>Real-Time Availability</span>
+              </div>
+              <div className="flex items-center justify-center gap-1.5">
+                <Lock className="h-4 w-4 text-indigo-500" />
+                <span>Secure Authentication</span>
+              </div>
+              <div className="flex items-center justify-center gap-1.5">
+                <Building2 className="h-4 w-4 text-amber-500" />
+                <span>Multi-Facility Directory</span>
+              </div>
             </div>
-          ) : !data ? null : section === 'overview' ? (
-            <Overview data={data} role={role} go={setSection} />
-          ) : section === 'bookings' ? (
-            <Bookings data={data} role={role} refresh={refresh} />
-          ) : section === 'approvals' ? (
-            <SimpleSection title="Pending Approvals Inbox" eyebrow="Authority Enforcement">
-              <PendingApprovalsInbox role={role} onActionSuccess={refresh} />
-            </SimpleSection>
-          ) : section === 'venues' ? (
-            <SimpleSection title="Venues" eyebrow="Campus inventory">
-              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-                {data.venues.length ? (
-                  data.venues.map((venue) => (
-                    <div className="rounded-2xl border border-border bg-card p-5 shadow-sm" key={venue._id || venue.id}>
-                      <Server className="mb-4 size-5 text-primary" />
-                      <h2 className="font-semibold text-lg">{venue.name}</h2>
-                      <p className="mt-1 text-sm text-muted-foreground">
-                        {venue.type ?? 'Campus venue'} · Capacity {venue.capacity ?? '—'}
+
+          </div>
+        </section>
+
+        {/* METRICS SECTION */}
+        <section className="py-12 border-b border-border bg-card/40">
+          <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+              <div className="rounded-2xl border border-border bg-card p-6 shadow-sm space-y-1">
+                <p className="text-3xl font-black text-primary tracking-tight">{venues.length || 4}</p>
+                <p className="text-xs font-bold text-foreground">Verified Facilities</p>
+                <p className="text-[11px] text-muted-foreground">Auditoriums, Halls & Labs</p>
+              </div>
+
+              <div className="rounded-2xl border border-border bg-card p-6 shadow-sm space-y-1">
+                <p className="text-3xl font-black text-emerald-600 tracking-tight">1,165+</p>
+                <p className="text-xs font-bold text-foreground">Total Campus Capacity</p>
+                <p className="text-[11px] text-muted-foreground">Concurrent Seating</p>
+              </div>
+
+              <div className="rounded-2xl border border-border bg-card p-6 shadow-sm space-y-1">
+                <p className="text-3xl font-black text-indigo-600 tracking-tight">100%</p>
+                <p className="text-xs font-bold text-foreground">Conflict-Free Slots</p>
+                <p className="text-[11px] text-muted-foreground">Guaranteed Reservations</p>
+              </div>
+
+              <div className="rounded-2xl border border-border bg-card p-6 shadow-sm space-y-1">
+                <p className="text-3xl font-black text-amber-600 tracking-tight">24/7</p>
+                <p className="text-xs font-bold text-foreground">Online Scheduling</p>
+                <p className="text-[11px] text-muted-foreground">Instant Request Routing</p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* CAMPUS VENUES DIRECTORY (#venues) */}
+        <section id="venues" className="py-16 sm:py-24">
+          <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 space-y-8">
+            
+            <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-4">
+              <div>
+                <span className="text-xs font-semibold text-primary uppercase tracking-wider">
+                  Campus Facilities Inventory
+                </span>
+                <h2 className="mt-1 text-2xl sm:text-3xl font-bold tracking-tight text-foreground">
+                  Featured Venues & Lecture Halls
+                </h2>
+                <p className="text-xs text-muted-foreground">
+                  Browse capacity, location, and equipment across North and South campus grounds.
+                </p>
+              </div>
+
+              {/* Search & Type Filter */}
+              <div className="flex flex-col sm:flex-row items-center gap-2">
+                <div className="relative w-full sm:w-56">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                  <input
+                    type="text"
+                    value={venueSearch}
+                    onChange={(e) => setVenueSearch(e.target.value)}
+                    placeholder="Search venue name..."
+                    className="w-full rounded-xl border border-border bg-background py-1.5 pl-8 pr-3 text-xs outline-none focus:border-primary"
+                  />
+                </div>
+
+                <div className="flex items-center gap-1 overflow-x-auto w-full sm:w-auto pb-1 sm:pb-0">
+                  {venueTypes.map((t) => (
+                    <button
+                      key={t}
+                      onClick={() => setSelectedType(t)}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-all ${
+                        selectedType === t
+                          ? 'bg-primary text-primary-foreground shadow-sm'
+                          : 'bg-muted/60 text-muted-foreground hover:bg-muted hover:text-foreground'
+                      }`}
+                    >
+                      {t}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* Venues Grid */}
+            {loadingVenues ? (
+              <div className="py-16 text-center text-xs text-muted-foreground">
+                Loading campus venues...
+              </div>
+            ) : filteredVenues.length === 0 ? (
+              <div className="py-16 text-center text-xs text-muted-foreground">
+                No venues matching your filter criteria.
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {filteredVenues.map((v) => (
+                  <div
+                    key={v.id || v.venue_id}
+                    className="rounded-2xl border border-border bg-card p-6 shadow-sm hover:border-primary/50 transition-all flex flex-col justify-between space-y-4 group"
+                  >
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <span className="rounded-full bg-primary/10 px-2.5 py-0.5 text-[10px] font-bold text-primary font-mono">
+                          {v.type || v.venue_type}
+                        </span>
+                        <span
+                          className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                            v.status === 'ACTIVE' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'
+                          }`}
+                        >
+                          <span
+                            className={`h-1.5 w-1.5 rounded-full ${
+                              v.status === 'ACTIVE' ? 'bg-emerald-500' : 'bg-amber-500'
+                            }`}
+                          />
+                          {v.status}
+                        </span>
+                      </div>
+
+                      <div>
+                        <h3 className="text-lg font-bold text-foreground group-hover:text-primary transition-colors">
+                          {v.name || v.venue_name}
+                        </h3>
+                        <p className="text-xs text-muted-foreground flex items-center gap-1 mt-1">
+                          <MapPin className="h-3.5 w-3.5 text-primary shrink-0" />
+                          {v.location}
+                        </p>
+                      </div>
+
+                      <p className="text-xs text-muted-foreground line-clamp-2 leading-relaxed">
+                        {v.description || 'Full audio-visual infrastructure, central projection system, and high-speed campus Wi-Fi.'}
                       </p>
-                      <p className="mt-1 text-xs text-muted-foreground">{venue.location}</p>
-                      <span className="mt-4 inline-block rounded-full bg-emerald-500/15 border border-emerald-500/20 px-3 py-0.5 text-xs font-medium text-emerald-600 dark:text-emerald-400 capitalize">
-                        {venue.status ?? 'active'}
-                      </span>
                     </div>
-                  ))
-                ) : (
-                  <Empty title="No venues configured" text="Database contains no venue entries." />
-                )}
-              </div>
-            </SimpleSection>
-          ) : section === 'authorities' ? (
-            <SimpleSection title="Venue Authority Matrix" eyebrow="Administrative Delegation">
-              <VenueAuthorityPanel role={role} />
-            </SimpleSection>
-          ) : section === 'reports' ? (
-            <SimpleSection title="Reports" eyebrow="Insights">
-              <div className="grid gap-4 sm:grid-cols-3">
-                <Metric label="Bookings" value={data.metrics.total} icon={BarChart3} />
-                <Metric label="Approved" value={data.metrics.approved} icon={CheckCircle2} />
-                <Metric label="Pending" value={data.metrics.pending} icon={Clock3} />
-              </div>
-              <Empty
-                title="PostgreSQL Aggregation Engine"
-                text="As requests are submitted and approved, relational data and SQL metrics will update live here."
-              />
-            </SimpleSection>
-          ) : section === 'os' ? (
-            <SimpleSection title="Operating Systems Academic Lab" eyebrow="OS Simulation Suite">
-              <OSAcademicLab />
-            </SimpleSection>
-          ) : section === 'audit' ? (
-            <SimpleSection title="System Audit Trail" eyebrow="Non-Repudiation & Security Log">
-              <AuditTrailViewer />
-            </SimpleSection>
-          ) : (
-            <SimpleSection title="DBMS Concepts & SQL Lab" eyebrow="Data Systems Lab">
-              <DBMSAcademicLab />
-            </SimpleSection>
-          )}
-        </div>
-      </section>
-    </main>
-  )
-}
 
-export default function Page() {
-  return <App />
+                    <div className="pt-4 border-t border-border flex items-center justify-between">
+                      <span className="text-xs font-semibold text-foreground flex items-center gap-1">
+                        <Users className="h-3.5 w-3.5 text-muted-foreground" />
+                        Capacity: {v.capacity}
+                      </span>
+
+                      <Link
+                        href={isAuthenticated ? '/dashboard' : '/login'}
+                        className="rounded-xl bg-primary/10 px-3.5 py-1.5 text-xs font-semibold text-primary hover:bg-primary hover:text-white transition-all flex items-center gap-1"
+                      >
+                        Book Venue <ArrowRight className="h-3.5 w-3.5" />
+                      </Link>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+          </div>
+        </section>
+
+        {/* HOW IT WORKS (3 STEPS) */}
+        <section className="py-16 sm:py-20 border-t border-border bg-card/30">
+          <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 space-y-12">
+            
+            <div className="text-center max-w-2xl mx-auto space-y-2">
+              <span className="text-xs font-semibold text-primary uppercase tracking-wider">Streamlined Workflow</span>
+              <h2 className="text-2xl sm:text-3xl font-bold tracking-tight text-foreground">
+                How Venue Allocation Works
+              </h2>
+              <p className="text-xs text-muted-foreground">
+                From slot selection to real-time verification and departmental authorization
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div className="rounded-2xl border border-border bg-card p-6 shadow-sm space-y-3 relative">
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary font-bold text-sm">
+                  1
+                </div>
+                <h3 className="text-base font-bold text-foreground">Select Venue & Time Slot</h3>
+                <p className="text-xs text-muted-foreground leading-relaxed">
+                  Choose your venue from the campus directory, specify expected attendees, and select your target reservation window.
+                </p>
+              </div>
+
+              <div className="rounded-2xl border border-border bg-card p-6 shadow-sm space-y-3 relative">
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-500/10 text-indigo-600 font-bold text-sm">
+                  2
+                </div>
+                <h3 className="text-base font-bold text-foreground">Automated Availability Check</h3>
+                <p className="text-xs text-muted-foreground leading-relaxed">
+                  The system automatically verifies schedule availability in real time to prevent any overlapping bookings.
+                </p>
+              </div>
+
+              <div className="rounded-2xl border border-border bg-card p-6 shadow-sm space-y-3 relative">
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-500/10 text-emerald-600 font-bold text-sm">
+                  3
+                </div>
+                <h3 className="text-base font-bold text-foreground">Department Approval & Pass</h3>
+                <p className="text-xs text-muted-foreground leading-relaxed">
+                  Designated venue authority staff review the request. Once approved, an official digital reservation pass is generated.
+                </p>
+              </div>
+            </div>
+
+          </div>
+        </section>
+
+        {/* CTA BANNER */}
+        <section className="py-16 sm:py-20 border-t border-border bg-gradient-to-r from-primary/10 via-indigo-500/10 to-primary/10">
+          <div className="mx-auto max-w-4xl px-4 text-center space-y-6">
+            <h2 className="text-3xl sm:text-4xl font-extrabold tracking-tight text-foreground">
+              Begin Scheduling Campus Venues Today
+            </h2>
+            <p className="text-xs sm:text-sm text-muted-foreground max-w-xl mx-auto">
+              Empowering campus student organizations, faculty departments, and event coordinators with conflict-free scheduling.
+            </p>
+            <div className="flex items-center justify-center gap-3">
+              <Link
+                href="/register"
+                className="rounded-xl bg-primary px-6 py-2.5 text-xs font-semibold text-primary-foreground shadow-md hover:bg-primary/90 transition-all"
+              >
+                Create Campus Account
+              </Link>
+              <Link
+                href="/login"
+                className="rounded-xl border border-border bg-card px-6 py-2.5 text-xs font-semibold text-foreground hover:bg-muted transition-all"
+              >
+                Sign In
+              </Link>
+            </div>
+          </div>
+        </section>
+      </main>
+
+      <Footer />
+    </div>
+  )
 }

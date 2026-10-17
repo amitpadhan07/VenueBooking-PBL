@@ -9,20 +9,20 @@ export async function POST(request: NextRequest) {
     const authUser = await getAuthUser(request)
 
     if (authUser) {
+      const detailsJson = JSON.stringify({
+        email: authUser.email,
+        role: authUser.role,
+        ip: request.headers.get('x-forwarded-for') || '127.0.0.1',
+      })
       await prisma.$executeRaw`
-        INSERT INTO audit_logs (log_id, user_id, action, entity_type, entity_id, details, ip_address, created_at)
+        INSERT INTO audit_logs (log_id, user_id, action, entity_type, entity_id, details, created_at)
         VALUES (
-          gen_random_uuid(),
+          gen_random_uuid()::text,
           ${authUser.userId},
           'LOGOUT',
           'USER',
           ${authUser.userId},
-          ${JSON.stringify({
-            email: authUser.email,
-            role: authUser.role,
-            timestamp: new Date().toISOString(),
-          })}::jsonb,
-          ${request.headers.get('x-forwarded-for') || '127.0.0.1'},
+          ${detailsJson},
           NOW()
         );
       `

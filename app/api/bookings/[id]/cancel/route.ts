@@ -8,7 +8,7 @@ export const dynamic = 'force-dynamic'
  * PATCH /api/bookings/[id]/cancel
  * Pure SQL transactional cancellation of booking with notification and audit logging.
  */
-export async function PATCH(
+async function handleCancellation(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -116,4 +116,18 @@ export async function PATCH(
       { status: 500 }
     )
   }
+}
+
+export async function POST(
+  request: NextRequest,
+  context: { params: Promise<{ id: string }> }
+) {
+  return handleCancellation(request, context)
+}
+
+export async function PATCH(
+  request: NextRequest,
+  context: { params: Promise<{ id: string }> }
+) {
+  return handleCancellation(request, context)
 }
