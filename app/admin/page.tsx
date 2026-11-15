@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 import Navbar from '@/components/layout/Navbar'
 import Footer from '@/components/layout/Footer'
 import { useAuth } from '@/components/auth/AuthContext'
+import VenueAuthorityPanel from '@/components/admin/VenueAuthorityPanel'
 import {
   ShieldCheck,
   Building2,
@@ -85,7 +86,7 @@ export default function AdminDashboardPage() {
   const router = useRouter()
   const { user, role, isAuthenticated, loading: authLoading, login } = useAuth()
 
-  const [activeTab, setActiveTab] = useState<'venues' | 'bookings' | 'users' | 'audit'>('venues')
+  const [activeTab, setActiveTab] = useState<'venues' | 'bookings' | 'users' | 'audit' | 'authorities'>('venues')
   const [loading, setLoading] = useState(true)
 
   // Data
@@ -496,6 +497,18 @@ export default function AdminDashboardPage() {
               <Activity className="h-4 w-4" />
               Audit Trail ({auditLogs.length})
             </button>
+
+            <button
+              onClick={() => setActiveTab('authorities')}
+              className={`pb-3 text-sm font-semibold transition-colors flex items-center gap-1.5 border-b-2 -mb-px whitespace-nowrap ${
+                activeTab === 'authorities'
+                  ? 'border-primary text-primary'
+                  : 'border-transparent text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              <ShieldCheck className="h-4 w-4" />
+              Authority Matrix
+            </button>
           </div>
 
           {/* TAB 1: VENUES CRUD */}
@@ -759,6 +772,13 @@ export default function AdminDashboardPage() {
                   </table>
                 </div>
               </div>
+            </div>
+          )}
+
+          {/* TAB 5: VENUE AUTHORITY MATRIX */}
+          {activeTab === 'authorities' && (
+            <div className="space-y-4">
+              <VenueAuthorityPanel role="ADMIN" />
             </div>
           )}
 

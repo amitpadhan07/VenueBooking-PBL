@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 import Navbar from '@/components/layout/Navbar'
 import Footer from '@/components/layout/Footer'
 import { useAuth } from '@/components/auth/AuthContext'
+import PendingApprovalsInbox from '@/components/employee/PendingApprovalsInbox'
 import {
   CalendarDays,
   Clock3,
@@ -25,6 +26,8 @@ import {
   X,
   ArrowRight,
   ShieldAlert,
+  ShieldCheck,
+  Check,
 } from 'lucide-react'
 
 interface BookingItem {
@@ -62,12 +65,13 @@ export default function UserDashboardPage() {
   const router = useRouter()
   const { user, isAuthenticated, loading: authLoading } = useAuth()
 
-  const [activeTab, setActiveTab] = useState<'bookings' | 'venues'>('bookings')
+  const [activeTab, setActiveTab] = useState<'bookings' | 'venues' | 'approvals' | 'assigned'>('bookings')
   const [filterStatus, setFilterStatus] = useState<string>('ALL')
   const [searchQuery, setSearchQuery] = useState('')
 
   const [bookings, setBookings] = useState<BookingItem[]>([])
   const [venues, setVenues] = useState<VenueItem[]>([])
+  const [authorizedVenues, setAuthorizedVenues] = useState<any[]>([])
   const [loadingData, setLoadingData] = useState(true)
 
   // Booking Modal State
@@ -94,9 +98,10 @@ export default function UserDashboardPage() {
   const loadData = useCallback(async () => {
     try {
       setLoadingData(true)
-      const [vRes, bRes] = await Promise.all([
+      const [vRes, bRes, meRes] = await Promise.all([
         fetch('/api/venues'),
         fetch('/api/bookings/my'),
+        fetch('/api/auth/me'),
       ])
 
       if (vRes.ok) {
@@ -111,6 +116,13 @@ export default function UserDashboardPage() {
       if (bRes.ok) {
         const bData = await bRes.json()
         setBookings(bData.bookings || [])
+      }
+
+      if (meRes.ok) {
+        const meData = await meRes.json()
+        if (meData?.user?.employee?.authorizedVenues) {
+          setAuthorizedVenues(meData.user.employee.authorizedVenues)
+        }
       }
     } catch (err) {
       console.error('Failed to load user dashboard data:', err)
@@ -384,11 +396,11 @@ export default function UserDashboardPage() {
             </div>
           </div>
 
-          {/* Tabs: My Bookings vs Campus Venues */}
-          <div className="flex items-center gap-3 border-b border-border">
+          {/* Tabs: My Bookings vs Campus Venues vs Employee Approvals */}
+          <div className="flex items-center gap-3 border-b border-border overflow-x-auto pb-1">
             <button
               onClick={() => setActiveTab('bookings')}
-              className={`pb-3 text-sm font-semibold transition-colors flex items-center gap-2 border-b-2 -mb-px ${
+              className={`pb-3 text-sm font-semibold transition-colors flex items-center gap-2 border-b-2 -mb-px whitespace-nowrap ${
                 activeTab === 'bookings'
                   ? 'border-primary text-primary'
                   : 'border-transparent text-muted-foreground hover:text-foreground'
@@ -400,7 +412,7 @@ export default function UserDashboardPage() {
 
             <button
               onClick={() => setActiveTab('venues')}
-              className={`pb-3 text-sm font-semibold transition-colors flex items-center gap-2 border-b-2 -mb-px ${
+              className={`pb-3 text-sm font-semibold transition-colors flex items-center gap-2 border-b-2 -mb-px whitespace-nowrap ${
                 activeTab === 'venues'
                   ? 'border-primary text-primary'
                   : 'border-transparent text-muted-foreground hover:text-foreground'
@@ -409,6 +421,34 @@ export default function UserDashboardPage() {
               <Building2 className="h-4 w-4" />
               Campus Facilities Directory ({venues.length})
             </button>
+
+            {(user?.role === 'EMPLOYEE' || user?.role === 'ADMIN') && (
+              <>
+                <button
+                  onClick={() => setActiveTab('approvals')}
+                  className={`pb-3 text-sm font-semibold transition-colors flex items-center gap-2 border-b-2 -mb-px whitespace-nowrap ${
+                    activeTab === 'approvals'
+                      ? 'border-primary text-primary'
+                      : 'border-transparent text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  <ShieldCheck className="h-4 w-4 text-blue-600" />
+                  Approver Inbox
+                </button>
+
+                <button
+                  onClick={() => setActiveTab('assigned')}
+                  className={`pb-3 text-sm font-semibold transition-colors flex items-center gap-2 border-b-2 -mb-px whitespace-nowrap ${
+                    activeTab === 'assigned'
+                      ? 'border-primary text-primary'
+                      : 'border-transparent text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  <MapPin className="h-4 w-4 text-emerald-600" />
+                  My Authorized Venues ({authorizedVenues.length})
+                </button>
+              </>
+            )}
           </div>
 
           {/* Tab 1: My Bookings */}
@@ -612,6 +652,78 @@ export default function UserDashboardPage() {
                   </div>
                 </div>
               ))}
+            </div>
+          )}
+
+          {/* Tab 3: Approver Inbox (Employee / Admin) */}
+          {activeTab === 'approvals' && (
+            <div className="space-y-4">
+              <PendingApprovalsInbox
+                role={user?.role === 'ADMIN' ? 'Admin' : 'Employee'}
+                onActionSuccess={loadData}
+              />
+            </div>
+          )}
+
+          {/* Tab 4: Authorized Venues for Current Approver */}
+          {activeTab === 'assigned' && (
+            <div className="space-y-4">
+              <div className="rounded-2xl border border-primary/20 bg-primary/5 p-5">
+                <div className="flex items-center gap-2 text-primary font-semibold text-sm">
+                  <ShieldCheck className="size-4" />
+                  <span>Delegated Venue Jurisdiction Matrix</span>
+                </div>
+                <p className="mt-1 text-xs text-muted-foreground leading-relaxed">
+                  Below are the specific campus facilities you have been granted administrative approval rights for.
+                  Any requests for other campus venues are strictly blocked with HTTP 403 Forbidden under RBAC rules.
+                </p>
+              </div>
+
+              {authorizedVenues.length === 0 ? (
+                <div className="rounded-2xl border border-dashed border-border p-8 text-center bg-card">
+                  <Building2 className="size-8 mx-auto text-muted-foreground mb-2 opacity-50" />
+                  <p className="text-sm font-semibold text-foreground">No Venues Currently Assigned</p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    An Administrator must assign you authority over a venue via the Authority Matrix.
+                  </p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {authorizedVenues.map((v) => (
+                    <div
+                      key={v.authorityId || v.venueId}
+                      className="rounded-2xl border border-border bg-card p-5 shadow-sm space-y-3"
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 px-2 py-0.5 text-[10px] font-bold">
+                          Authorized Approver
+                        </span>
+                        <span className="text-xs font-mono font-semibold text-muted-foreground">
+                          {v.capacity} seats
+                        </span>
+                      </div>
+
+                      <div>
+                        <h4 className="text-base font-bold text-foreground">{v.venueName}</h4>
+                        <p className="text-xs text-muted-foreground flex items-center gap-1 mt-1">
+                          <MapPin className="size-3 text-primary shrink-0" />
+                          {v.location}
+                        </p>
+                      </div>
+
+                      <div className="pt-3 border-t border-border flex items-center justify-between">
+                        <span className="text-[11px] text-muted-foreground">Authority Status: Active</span>
+                        <button
+                          onClick={() => setActiveTab('approvals')}
+                          className="rounded-lg bg-primary/10 px-3 py-1 text-xs font-semibold text-primary hover:bg-primary hover:text-primary-foreground transition-colors"
+                        >
+                          Review Inbox
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 

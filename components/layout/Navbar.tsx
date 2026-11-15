@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useAuth } from '@/components/auth/AuthContext'
@@ -18,19 +18,97 @@ import {
   PhoneCall,
   Info,
   SlidersHorizontal,
+  Bell,
+  CheckCircle2,
+  AlertCircle,
+  BarChart3,
+  Cpu,
+  Database,
+  Check,
 } from 'lucide-react'
+
+interface NotificationItem {
+  id: string
+  title: string
+  message: string
+  type: string
+  is_read: boolean
+  created_at: string
+}
 
 export default function Navbar() {
   const { user, role, isAuthenticated, loading, logout } = useAuth()
   const pathname = usePathname()
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [userDropdownOpen, setUserDropdownOpen] = useState(false)
+  const [notificationsOpen, setNotificationsOpen] = useState(false)
+
+  // Notification State
+  const [notifications, setNotifications] = useState<NotificationItem[]>([])
+  const [unreadCount, setUnreadCount] = useState(0)
+  const [loadingNotifications, setLoadingNotifications] = useState(false)
+
+  const fetchNotifications = useCallback(async () => {
+    if (!isAuthenticated) return
+    try {
+      setLoadingNotifications(true)
+      const res = await fetch('/api/notifications')
+      if (res.ok) {
+        const data = await res.json()
+        setNotifications(data.notifications || [])
+        setUnreadCount(data.unreadCount || 0)
+      }
+    } catch (err) {
+      console.error('Error fetching notifications:', err)
+    } finally {
+      setLoadingNotifications(false)
+    }
+  }, [isAuthenticated])
+
+  useEffect(() => {
+    if (isAuthenticated) {
+      fetchNotifications()
+    }
+  }, [isAuthenticated, fetchNotifications])
+
+  const markAllRead = async () => {
+    try {
+      const res = await fetch('/api/notifications', { method: 'PATCH' })
+      if (res.ok) {
+        setNotifications((prev) => prev.map((n) => ({ ...n, is_read: true })))
+        setUnreadCount(0)
+      }
+    } catch (err) {
+      console.error('Failed to mark notifications read:', err)
+    }
+  }
+
+  const markSingleRead = async (notificationId: string) => {
+    try {
+      const res = await fetch('/api/notifications', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ notificationId }),
+      })
+      if (res.ok) {
+        setNotifications((prev) =>
+          prev.map((n) => (n.id === notificationId ? { ...n, is_read: true } : n))
+        )
+        setUnreadCount((prev) => Math.max(0, prev - 1))
+      }
+    } catch (err) {
+      console.error('Failed to mark notification read:', err)
+    }
+  }
 
   const navLinks = [
     { name: 'Home', href: '/' },
     { name: 'Venues', href: '/#venues' },
-    { name: 'About Us', href: '/about' },
-    { name: 'Contact Us', href: '/contact' },
+    { name: 'OS Lab', href: '/os-lab' },
+    { name: 'DBMS Lab', href: '/dbms-lab' },
+    { name: 'Analytics', href: '/dashboard/reports' },
+    { name: 'About', href: '/about' },
+    { name: 'Contact', href: '/contact' },
   ]
 
   const getRoleBadgeStyle = (r?: string | null) => {
@@ -74,7 +152,7 @@ export default function Navbar() {
               <Link
                 key={link.name}
                 href={link.href}
-                className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                className={`px-3 py-1.5 rounded-lg text-xs lg:text-sm font-medium transition-colors ${
                   isActive
                     ? 'text-primary bg-primary/10 font-semibold'
                     : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
@@ -90,97 +168,194 @@ export default function Navbar() {
             <>
               <Link
                 href="/dashboard"
-                className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5 ${
+                className={`px-3 py-1.5 rounded-lg text-xs lg:text-sm font-medium transition-colors flex items-center gap-1.5 ${
                   pathname === '/dashboard'
                     ? 'text-primary bg-primary/10 font-semibold'
                     : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
                 }`}
               >
                 <CalendarDays className="h-4 w-4" />
-                User Dashboard
+                Dashboard
               </Link>
 
               {role === 'ADMIN' && (
                 <Link
                   href="/admin"
-                  className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5 ${
+                  className={`px-3 py-1.5 rounded-lg text-xs lg:text-sm font-medium transition-colors flex items-center gap-1.5 ${
                     pathname === '/admin'
                       ? 'text-purple-600 bg-purple-500/10 font-semibold'
                       : 'text-muted-foreground hover:text-purple-600 hover:bg-purple-500/10'
                   }`}
                 >
                   <ShieldCheck className="h-4 w-4 text-purple-600" />
-                  Admin Suite
+                  Admin
                 </Link>
               )}
             </>
           )}
         </nav>
 
-        {/* Desktop Auth Controls */}
+        {/* Desktop Auth Controls & Notifications */}
         <div className="hidden md:flex items-center gap-3">
           {loading ? (
             <div className="h-9 w-24 animate-pulse rounded-lg bg-muted" />
           ) : isAuthenticated && user ? (
-            <div className="relative">
-              <button
-                onClick={() => setUserDropdownOpen(!userDropdownOpen)}
-                className="flex items-center gap-2.5 rounded-xl border border-border bg-card px-3 py-1.5 text-xs font-medium shadow-sm hover:border-primary/50 transition-colors"
-                id="user-menu-button"
-              >
-                <div className="flex h-7 w-7 items-center justify-center rounded-full bg-gradient-to-tr from-primary to-indigo-600 text-white font-bold text-xs">
-                  {user.name.charAt(0).toUpperCase()}
-                </div>
-                <div className="flex flex-col text-left">
-                  <span className="font-semibold text-foreground max-w-[120px] truncate">{user.name}</span>
-                  <span className={`inline-block px-1.5 py-0.2 rounded text-[10px] font-mono border ${getRoleBadgeStyle(user.role)}`}>
-                    {user.role}
-                  </span>
-                </div>
-                <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
-              </button>
-
-              {/* User Dropdown Menu */}
-              {userDropdownOpen && (
-                <div
-                  className="absolute right-0 mt-2 w-56 rounded-xl border border-border bg-card p-2 shadow-xl ring-1 ring-black/5 z-50 animate-in fade-in zoom-in-95 duration-100"
-                  onClick={() => setUserDropdownOpen(false)}
+            <div className="flex items-center gap-2">
+              {/* Notification Center Trigger */}
+              <div className="relative">
+                <button
+                  onClick={() => {
+                    setNotificationsOpen(!notificationsOpen)
+                    setUserDropdownOpen(false)
+                    if (!notificationsOpen) fetchNotifications()
+                  }}
+                  className="relative p-2 rounded-xl border border-border bg-card text-muted-foreground hover:text-foreground hover:border-primary/50 transition-colors"
+                  aria-label="Notifications"
                 >
-                  <div className="px-3 py-2 border-b border-border mb-1">
-                    <p className="text-xs font-semibold text-foreground">{user.name}</p>
-                    <p className="text-[11px] text-muted-foreground truncate">{user.email}</p>
-                    <p className="text-[10px] text-primary mt-1 font-medium">{user.department}</p>
-                  </div>
-
-                  <Link
-                    href="/dashboard"
-                    className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-xs font-medium text-foreground hover:bg-muted transition-colors"
-                  >
-                    <CalendarDays className="h-4 w-4 text-primary" />
-                    My Bookings & Schedule
-                  </Link>
-
-                  {user.role === 'ADMIN' && (
-                    <Link
-                      href="/admin"
-                      className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-xs font-medium text-purple-600 hover:bg-purple-50 dark:hover:bg-purple-950/40 transition-colors"
-                    >
-                      <ShieldCheck className="h-4 w-4" />
-                      Admin Control Center
-                    </Link>
+                  <Bell className="h-4 w-4" />
+                  {unreadCount > 0 && (
+                    <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white shadow-sm">
+                      {unreadCount > 9 ? '9+' : unreadCount}
+                    </span>
                   )}
+                </button>
 
-                  <div className="my-1 border-t border-border" />
+                {/* Notifications Dropdown Drawer */}
+                {notificationsOpen && (
+                  <div className="absolute right-0 mt-2 w-80 sm:w-96 rounded-2xl border border-border bg-card shadow-2xl z-50 overflow-hidden animate-in fade-in zoom-in-95 duration-100">
+                    <div className="p-3.5 border-b border-border flex items-center justify-between bg-muted/20">
+                      <div className="flex items-center gap-2">
+                        <Bell className="h-4 w-4 text-primary" />
+                        <span className="text-xs font-bold text-foreground">Notifications</span>
+                        {unreadCount > 0 && (
+                          <span className="rounded-full bg-primary/10 px-2 py-0.2 text-[10px] font-semibold text-primary">
+                            {unreadCount} unread
+                          </span>
+                        )}
+                      </div>
+                      {unreadCount > 0 && (
+                        <button
+                          onClick={markAllRead}
+                          className="text-[11px] text-primary hover:underline font-semibold"
+                        >
+                          Mark all as read
+                        </button>
+                      )}
+                    </div>
 
-                  <button
-                    onClick={() => logout()}
-                    className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-xs font-medium text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40 transition-colors"
+                    <div className="max-h-80 overflow-y-auto divide-y divide-border">
+                      {loadingNotifications ? (
+                        <div className="p-4 text-center text-xs text-muted-foreground">
+                          Loading alerts...
+                        </div>
+                      ) : notifications.length === 0 ? (
+                        <div className="p-6 text-center text-xs text-muted-foreground">
+                          No alerts right now. You are all caught up!
+                        </div>
+                      ) : (
+                        notifications.map((n) => (
+                          <div
+                            key={n.id}
+                            onClick={() => !n.is_read && markSingleRead(n.id)}
+                            className={`p-3 text-xs transition-colors cursor-pointer hover:bg-muted/30 ${
+                              !n.is_read ? 'bg-primary/5' : ''
+                            }`}
+                          >
+                            <div className="flex items-start justify-between gap-2">
+                              <p className={`font-semibold ${!n.is_read ? 'text-primary' : 'text-foreground'}`}>
+                                {n.title}
+                              </p>
+                              {!n.is_read && (
+                                <span className="h-2 w-2 rounded-full bg-primary shrink-0 mt-1" />
+                              )}
+                            </div>
+                            <p className="text-[11px] text-muted-foreground mt-0.5 leading-relaxed">
+                              {n.message}
+                            </p>
+                            <span className="text-[10px] text-muted-foreground/80 mt-1 block font-mono">
+                              {new Date(n.created_at).toLocaleDateString()} at{' '}
+                              {new Date(n.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            </span>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* User Profile Dropdown */}
+              <div className="relative">
+                <button
+                  onClick={() => {
+                    setUserDropdownOpen(!userDropdownOpen)
+                    setNotificationsOpen(false)
+                  }}
+                  className="flex items-center gap-2 rounded-xl border border-border bg-card px-3 py-1.5 text-xs font-medium shadow-sm hover:border-primary/50 transition-colors"
+                  id="user-menu-button"
+                >
+                  <div className="flex h-7 w-7 items-center justify-center rounded-full bg-gradient-to-tr from-primary to-indigo-600 text-white font-bold text-xs">
+                    {user.name.charAt(0).toUpperCase()}
+                  </div>
+                  <div className="flex flex-col text-left">
+                    <span className="font-semibold text-foreground max-w-[120px] truncate">{user.name}</span>
+                    <span className={`inline-block px-1.5 py-0.2 rounded text-[10px] font-mono border ${getRoleBadgeStyle(user.role)}`}>
+                      {user.role}
+                    </span>
+                  </div>
+                  <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+                </button>
+
+                {/* User Dropdown Menu */}
+                {userDropdownOpen && (
+                  <div
+                    className="absolute right-0 mt-2 w-56 rounded-xl border border-border bg-card p-2 shadow-xl ring-1 ring-black/5 z-50 animate-in fade-in zoom-in-95 duration-100"
+                    onClick={() => setUserDropdownOpen(false)}
                   >
-                    <LogOut className="h-4 w-4" />
-                    Sign Out
-                  </button>
-                </div>
-              )}
+                    <div className="px-3 py-2 border-b border-border mb-1">
+                      <p className="text-xs font-semibold text-foreground">{user.name}</p>
+                      <p className="text-[11px] text-muted-foreground truncate">{user.email}</p>
+                      <p className="text-[10px] text-primary mt-1 font-medium">{user.department}</p>
+                    </div>
+
+                    <Link
+                      href="/dashboard"
+                      className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-xs font-medium text-foreground hover:bg-muted transition-colors"
+                    >
+                      <CalendarDays className="h-4 w-4 text-primary" />
+                      Workspace Dashboard
+                    </Link>
+
+                    <Link
+                      href="/dashboard/reports"
+                      className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-xs font-medium text-foreground hover:bg-muted transition-colors"
+                    >
+                      <BarChart3 className="h-4 w-4 text-primary" />
+                      Analytics & Reports
+                    </Link>
+
+                    {user.role === 'ADMIN' && (
+                      <Link
+                        href="/admin"
+                        className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-xs font-medium text-purple-600 hover:bg-purple-50 dark:hover:bg-purple-950/40 transition-colors"
+                      >
+                        <ShieldCheck className="h-4 w-4" />
+                        Admin Suite
+                      </Link>
+                    )}
+
+                    <div className="my-1 border-t border-border" />
+
+                    <button
+                      onClick={() => logout()}
+                      className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-xs font-medium text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40 transition-colors"
+                    >
+                      <LogOut className="h-4 w-4" />
+                      Sign Out
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
           ) : (
             <div className="flex items-center gap-2">
@@ -204,9 +379,20 @@ export default function Navbar() {
         {/* Mobile Hamburger Button */}
         <div className="flex md:hidden items-center gap-2">
           {isAuthenticated && user && (
-            <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${getRoleBadgeStyle(user.role)}`}>
-              {user.role}
-            </span>
+            <button
+              onClick={() => {
+                setNotificationsOpen(!notificationsOpen)
+                if (!notificationsOpen) fetchNotifications()
+              }}
+              className="relative p-1.5 rounded-lg border border-border text-muted-foreground hover:text-foreground"
+            >
+              <Bell className="h-4 w-4" />
+              {unreadCount > 0 && (
+                <span className="absolute -top-1 -right-1 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-red-500 text-[9px] font-bold text-white">
+                  {unreadCount}
+                </span>
+              )}
+            </button>
           )}
           <button
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
@@ -242,7 +428,16 @@ export default function Navbar() {
                   className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium text-foreground hover:bg-muted"
                 >
                   <CalendarDays className="h-4 w-4 text-primary" />
-                  User Dashboard
+                  Workspace Dashboard
+                </Link>
+
+                <Link
+                  href="/dashboard/reports"
+                  onClick={() => setMobileMenuOpen(false)}
+                  className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium text-foreground hover:bg-muted"
+                >
+                  <BarChart3 className="h-4 w-4 text-primary" />
+                  Analytics & Reports
                 </Link>
 
                 {role === 'ADMIN' && (
