@@ -79,7 +79,7 @@ async function main() {
 
   for (const e of employees) {
     await prisma.$executeRaw`
-      INSERT INTO employees (employee_id, user_id, employee_code, designation, department, status, created_at, updated_at)
+      INSERT INTO employees (employee_id, user_id, employee_code, designation, department, status, created_at)
       SELECT
         gen_random_uuid(),
         u.user_id,
@@ -87,7 +87,6 @@ async function main() {
         ${e.desig},
         ${e.dept},
         'ACTIVE',
-        NOW(),
         NOW()
       FROM users u
       WHERE u.email = ${e.email}
@@ -106,14 +105,13 @@ async function main() {
 
   for (const a of authorities) {
     await prisma.$executeRaw`
-      INSERT INTO venue_authority (authority_id, employee_id, venue_id, assigned_by, status, created_at, updated_at)
+      INSERT INTO venue_authority (authority_id, employee_id, venue_id, assigned_by, status, assigned_at)
       SELECT
         gen_random_uuid(),
         e.employee_id,
         v.venue_id,
         admin.user_id,
         'ACTIVE'::"AuthorityStatus",
-        NOW(),
         NOW()
       FROM employees e
       CROSS JOIN venues v

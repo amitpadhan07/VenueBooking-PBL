@@ -205,7 +205,9 @@ JOIN venues v ON va.venue_id = v.venue_id;
 3. **[`components/dbms/DBMSAcademicLab.tsx`](file:///c:/projects/VenueBooking-PBL/components/dbms/DBMSAcademicLab.tsx)** — Interactive SQL Query Playground, 3NF schema breakdown, and ACID visualizer.
 4. **[`app/api/dbms/query/route.ts`](file:///c:/projects/VenueBooking-PBL/app/api/dbms/query/route.ts)** — Live backend SQL executor for relational queries.
 5. **[`app/api/demo/concurrency-test/route.ts`](file:///c:/projects/VenueBooking-PBL/app/api/demo/concurrency-test/route.ts)** — Asynchronous `Promise.all` race test route proving double-booking prevention.
-6. **[`scripts/test-lavanya-defense.ts`](file:///c:/projects/VenueBooking-PBL/scripts/test-lavanya-defense.ts)** — Automated test suite verifying all 7 DBMS & OS concurrency requirements (15/15 passing).
+6. **[`app/api/reports/summary/route.ts`](file:///c:/projects/VenueBooking-PBL/app/api/reports/summary/route.ts)**, **[`app/api/reports/venue-utilization/route.ts`](file:///c:/projects/VenueBooking-PBL/app/api/reports/venue-utilization/route.ts)**, **[`app/api/reports/department-stats/route.ts`](file:///c:/projects/VenueBooking-PBL/app/api/reports/department-stats/route.ts)**, **[`app/api/reports/peak-hours/route.ts`](file:///c:/projects/VenueBooking-PBL/app/api/reports/peak-hours/route.ts)** — Phase J PostgreSQL SQL aggregation endpoints.
+7. **[`components/reports/AnalyticsReportsView.tsx`](file:///c:/projects/VenueBooking-PBL/components/reports/AnalyticsReportsView.tsx)** — Interactive system analytics, venue utilization benchmarks, departmental distributions, hourly demand profile, and CSV export.
+8. **[`scripts/test-lavanya-defense.ts`](file:///c:/projects/VenueBooking-PBL/scripts/test-lavanya-defense.ts)** — Automated test suite verifying DBMS & OS concurrency requirements.
 
 ---
 
@@ -253,7 +255,7 @@ pnpm exec tsx scripts/test-lavanya-defense.ts
 Expected Output:
 ```
 ===================================================================
-📊 FINAL RESULT: 15 / 15 TESTS PASSED (100%)
-🎉 Lavanya Joshi Phase 2 DBMS & OS Concurrency Requirements Verified!
+📊 FINAL RESULT: 18 / 18 TESTS PASSED (100%)
+🎉 Lavanya Joshi Phase 2 DBMS, OS Concurrency & Phase J Analytics Verified!
 ===================================================================
 ```

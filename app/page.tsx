@@ -29,6 +29,7 @@ import VenueAuthorityPanel from '@/components/admin/VenueAuthorityPanel'
 import PendingApprovalsInbox from '@/components/employee/PendingApprovalsInbox'
 import AuditTrailViewer from '@/components/audit/AuditTrailViewer'
 import AuthDefenseWidget from '@/components/auth/AuthDefenseWidget'
+import AnalyticsReportsView from '@/components/reports/AnalyticsReportsView'
 
 type Role = 'Student' | 'Employee' | 'Admin'
 type Section = 'overview' | 'bookings' | 'approvals' | 'venues' | 'authorities' | 'reports' | 'os' | 'dbms' | 'audit'
@@ -744,17 +745,7 @@ function App() {
               <VenueAuthorityPanel role={role} />
             </SimpleSection>
           ) : section === 'reports' ? (
-            <SimpleSection title="Reports" eyebrow="Insights">
-              <div className="grid gap-4 sm:grid-cols-3">
-                <Metric label="Bookings" value={data.metrics.total} icon={BarChart3} />
-                <Metric label="Approved" value={data.metrics.approved} icon={CheckCircle2} />
-                <Metric label="Pending" value={data.metrics.pending} icon={Clock3} />
-              </div>
-              <Empty
-                title="PostgreSQL Aggregation Engine"
-                text="As requests are submitted and approved, relational data and SQL metrics will update live here."
-              />
-            </SimpleSection>
+            <AnalyticsReportsView />
           ) : section === 'os' ? (
             <SimpleSection title="Operating Systems Academic Lab" eyebrow="OS Simulation Suite">
               <OSAcademicLab />

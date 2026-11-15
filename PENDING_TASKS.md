@@ -44,8 +44,8 @@
 | **Banker's Algorithm Simulator** | 70% | 100% | 🟢 Completed (Need matrix, Safety algorithm with Work/Finish, Safe sequence, Request tester) |
 | **DBMS Academic Concepts & SQL Lab** | 80% | 100% | 🟢 Completed (Lavanya Joshi: Live SQL query playground, 3NF schema, anomaly elimination, ACID visualizer) |
 | **In-App Notifications** | 70% | 90% | 🟢 Substantially Complete (Transactional notification triggers live) |
-| **Analytics & Reports** | 60% | 75% | 🟢 Substantially Complete (Live aggregations in DBMS Lab & Audit viewer) |
-| **Testing Suite & Concurrency Test** | 60% | 100% | 🟢 Completed (15/15 Lavanya DBMS/OS tests + 12/12 Akshat OS tests passing, 100%) |
+| **Analytics & Reports** | 100% | 100% | 🟢 Completed (Lavanya Joshi: PostgreSQL SQL aggregation APIs & AnalyticsReportsView live) |
+| **Testing Suite & Concurrency Test** | 100% | 100% | 🟢 Completed (18/18 Lavanya DBMS/OS/Analytics tests + 12/12 Akshat OS tests passing, 100%) |
 | **Frontend Polish & Responsive UI** | 90% | 95% | 🟢 Substantially Complete (Responsive workspace with live academic labs & defense scripts) |
 
 ---
@@ -206,23 +206,13 @@ A requested time interval $[S_{\text{req}}, E_{\text{req}}]$ conflicts with an e
 $$\text{Conflict} \iff (S_{\text{exist}} < E_{\text{req}}) \land (E_{\text{exist}} > S_{\text{req}})$$
 *(Considering only active bookings where $\text{status} \in \{\text{'PENDING'}, \text{'APPROVED'}\}$).*
 
-<<<<<<< HEAD
 ### 🔨 Tasks (Lead Developer: Lavanya Joshi):
 - [x] **Backend Validation Rules**:
-  - `start_time < end_time` (Strict order enforcement)
-  - `event_date >= CURRENT_DATE` (Rejection of past booking attempts)
+  - `start_time < end_time` (Strict temporal constraint & order enforcement)
+  - `event_date >= CURRENT_DATE` (Rejection of past booking attempts / Horizon past-date guard)
   - `expected_attendees <= venue.capacity` (Physical seating capacity guard)
-  - `expected_attendees > 0` (Positive integer constraint)
-  - Venue `status === 'ACTIVE'` (Maintenance/Inactive protection)
-=======
-### 🔨 Tasks:
-- [x] **Backend Validation Rules**:
-  - `start_time < end_time` (Strict temporal constraint)
-  - `event_date >= CURRENT_DATE` (Horizon past-date guard)
-  - `expected_attendees <= venue.capacity` (Capacity rule violation prevention)
   - `expected_attendees > 0` (Positive integer domain constraint)
-  - Venue `status === 'ACTIVE'`
->>>>>>> 19867eb23edb99c3de21323678ac363205f9a952
+  - Venue `status === 'ACTIVE'` (Maintenance/Inactive protection)
 - [x] **Slot Availability Query**:
   ```sql
   SELECT * FROM bookings
@@ -233,19 +223,14 @@ $$\text{Conflict} \iff (S_{\text{exist}} < E_{\text{req}}) \land (E_{\text{exist
     AND end_time > $3;
   ```
 - [x] **API Endpoints**:
-<<<<<<< HEAD
   - `GET /api/bookings`: Fetch list of bookings with filtering by `venueId`, `status`, `userId`, `date`.
   - `GET /api/bookings/availability?venueId=...&date=...`: Returns booked time slots and available time intervals for a venue on a given date.
-  - `POST /api/bookings`: Submits a new booking request in `PENDING` state with full relational validation.
+  - `POST /api/bookings`: Submits a new booking request in `PENDING` state with full relational validation & interval collision checks.
+  - `POST /api/bookings/concurrent-safe`: Concurrency-safe reservations utilizing row-level locks (`SELECT FOR UPDATE`).
   - `GET /api/bookings/my`: Returns current logged-in user's booking history and statistics.
   - `GET /api/bookings/[id]`: Fetch single booking details with approval history and audit logs.
   - `PATCH /api/bookings/[id]/cancel`: Student cancels own `PENDING` booking $\rightarrow$ transitions to `CANCELLED` with audit trail and notification.
-=======
-  - `GET /api/bookings?venueId=...&status=...&date=...`: Returns booked time slots and records with B-Tree composite index lookup.
-  - `POST /api/bookings`: Submits a new booking request in `PENDING` state with full interval collision validation.
-  - `POST /api/bookings/concurrent-safe`: Concurrency-safe reservations utilizing row-level locks (`SELECT FOR UPDATE`).
   - `GET /api/dashboard`: Returns current user's role workspace, booking list, and live status badges.
->>>>>>> 19867eb23edb99c3de21323678ac363205f9a952
 
 ---
 
@@ -434,16 +419,22 @@ When **Student A** and **Student B** submit requests for the same venue and time
 ---
 
 ## 11. Phase J: Analytics, Reports & Audit Logging
+*(Lead Developer: Lavanya Joshi – Database & SQL Aggregations)*
 
-### 🔨 Tasks (`/dashboard/reports`):
-- [ ] **Analytics Engine (SQL Aggregation Backend)**:
-  - `GET /api/reports/summary`: Total counts (Venues, Bookings, Approved, Pending, Rejected, Cancelled).
-  - `GET /api/reports/venue-utilization`: % occupancy and booking hours per venue.
+### 🔨 Tasks (`/dashboard/reports` / Section: Reports):
+- [x] **Analytics Engine (SQL Aggregation Backend)**:
+  - `GET /api/reports/summary`: Total counts (Venues, Bookings, Approved, Pending, Rejected, Cancelled, Users, Employees).
+  - `GET /api/reports/venue-utilization`: % occupancy and booking hours per venue via SQL GROUP BY & temporal differencing.
   - `GET /api/reports/department-stats`: Booking distribution across Academic Departments (CS, Mechanical, Electrical, Management).
-  - `GET /api/reports/peak-hours`: Most requested time slots of the day.
-- [ ] **Visual Charts & Data Tables**:
-  - Bar charts and donut charts for venue utilization and status breakdowns.
-  - Export report summary table to CSV / Print view.
+  - `GET /api/reports/peak-hours`: Most requested time slots of the day via PostgreSQL `generate_series` & interval overlap.
+  - `GET /api/reports`: Consolidated API endpoint returning all report datasets.
+- [x] **Visual Charts & Data Tables (`AnalyticsReportsView.tsx`)**:
+  - Venue utilization cards and progress bar benchmarks.
+  - Department distribution with stacked request breakdown.
+  - Hourly campus booking pressure visual bar chart with peak slot identification.
+  - Export report summary table to CSV (`VenueBooking_Analytics_Report_*.csv`).
+  - Print / PDF report view.
+  - Collapsible DBMS Academic Corner detailing underlying PostgreSQL aggregation queries.
 
 ---
 
@@ -451,8 +442,7 @@ When **Student A** and **Student B** submit requests for the same venue and time
 
 ### 🔨 Tasks:
 - [x] **Automated / Reproducible Test Scripts**:
-<<<<<<< HEAD
-  - [x] `scripts/test-lavanya-defense.ts` (Lavanya Joshi: 15/15 tests passing, 100%)
+  - [x] `scripts/test-lavanya-defense.ts` (Lavanya Joshi: 18/18 tests passing, 100%)
     - 8-Table Relational Schema & Cardinality validation
     - 3NF Anomaly Elimination (Insertion, Update, Deletion)
     - Relational Algebra Multi-Table JOIN
@@ -512,7 +502,7 @@ When **Student A** and **Student B** submit requests for the same venue and time
   - 3NF relational normalization schema visualizer, live read-only SQL query sandbox, and ARIES/WAL crash recovery lifecycle.
 
 ### 👩‍💻 Lavanya Joshi – Database & Backend Concurrency Defense:
-*Test Suite: `pnpm exec tsx scripts/test-lavanya-defense.ts` (15/15 Passed)*
+*Test Suite: `pnpm exec tsx scripts/test-lavanya-defense.ts` (18/18 Passed)*
 - [x] **DEMO L1: 8-Table 3NF Normalized SQL Schema**
   - Showcase `schema.sql`, table cardinalities (1:1, 1:N, N:M), foreign keys with `CASCADE`, and `CHECK (capacity > 0)`.
 - [x] **DEMO L2: Elimination of Relational Anomalies**
