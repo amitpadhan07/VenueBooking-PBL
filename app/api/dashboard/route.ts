@@ -9,9 +9,10 @@ export const dynamic = 'force-dynamic'
  * Pure SQL query fetching comprehensive workspace metrics, venues, recent bookings, and alerts.
  */
 export async function GET(request: NextRequest) {
+  let roleParam = 'Admin'
   try {
     const { searchParams } = new URL(request.url)
-    const roleParam = searchParams.get('role') || 'Admin'
+    roleParam = searchParams.get('role') || 'Admin'
 
     let prismaRole: PrismaRole = PrismaRole.ADMIN
     if (roleParam.toLowerCase() === 'student') prismaRole = PrismaRole.STUDENT
