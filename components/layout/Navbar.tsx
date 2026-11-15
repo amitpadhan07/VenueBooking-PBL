@@ -327,6 +327,14 @@ export default function Navbar() {
                     </Link>
 
                     <Link
+                      href="/profile"
+                      className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-xs font-medium text-foreground hover:bg-muted transition-colors"
+                    >
+                      <User className="h-4 w-4 text-primary" />
+                      Profile & Settings
+                    </Link>
+
+                    <Link
                       href="/dashboard/reports"
                       className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-xs font-medium text-foreground hover:bg-muted transition-colors"
                     >
@@ -429,6 +437,15 @@ export default function Navbar() {
                 >
                   <CalendarDays className="h-4 w-4 text-primary" />
                   Workspace Dashboard
+                </Link>
+
+                <Link
+                  href="/profile"
+                  onClick={() => setMobileMenuOpen(false)}
+                  className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium text-foreground hover:bg-muted"
+                >
+                  <User className="h-4 w-4 text-primary" />
+                  Profile & Settings
                 </Link>
 
                 <Link

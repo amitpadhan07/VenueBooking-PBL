@@ -39,7 +39,8 @@ export async function GET(request: NextRequest) {
       SELECT 
         b.booking_id, b.event_name, b.event_description, b.event_date::text, 
         b.start_time, b.end_time, b.expected_attendees, b.status, b.created_at::text,
-        v.venue_id, v.venue_name, v.location, v.capacity, v.venue_type
+        v.venue_id, v.venue_name, v.location, v.capacity, v.venue_type,
+        (SELECT remarks FROM approvals WHERE booking_id = b.booking_id ORDER BY action_at DESC LIMIT 1) AS rejection_remarks
       FROM bookings b
       JOIN venues v ON b.venue_id = v.venue_id
       WHERE b.user_id = $1
@@ -96,6 +97,9 @@ export async function GET(request: NextRequest) {
         attendees: b.expected_attendees,
         expected_attendees: b.expected_attendees,
         status: b.status,
+        rejection_remarks: b.rejection_remarks,
+        rejectionRemarks: b.rejection_remarks,
+        remarks: b.rejection_remarks,
         createdAt: b.created_at,
         created_at: b.created_at,
       })),

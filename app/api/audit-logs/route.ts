@@ -11,6 +11,7 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
     const actionFilter = searchParams.get('action')
+    const userIdFilter = searchParams.get('userId') || searchParams.get('user_id')
     const limitParam = parseInt(searchParams.get('limit') || '50', 10)
 
     let query = `
@@ -26,6 +27,11 @@ export async function GET(request: NextRequest) {
     if (actionFilter && actionFilter !== 'ALL') {
       params.push(actionFilter)
       query += ` AND al.action = $${params.length}`
+    }
+
+    if (userIdFilter) {
+      params.push(userIdFilter)
+      query += ` AND al.user_id = $${params.length}`
     }
 
     params.push(Math.min(limitParam, 100))

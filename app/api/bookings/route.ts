@@ -25,7 +25,8 @@ export async function GET(request: NextRequest) {
         b.booking_id, b.event_name, b.event_description, b.event_date::text, 
         b.start_time, b.end_time, b.expected_attendees, b.status, b.created_at::text,
         v.venue_id, v.venue_name, v.capacity, v.location, v.status AS venue_status,
-        u.user_id, u.name AS requester_name, u.email AS requester_email, u.department, u.role
+        u.user_id, u.name AS requester_name, u.email AS requester_email, u.department, u.role,
+        (SELECT remarks FROM approvals WHERE booking_id = b.booking_id ORDER BY action_at DESC LIMIT 1) AS rejection_remarks
       FROM bookings b
       JOIN venues v ON b.venue_id = v.venue_id
       JOIN users u ON b.user_id = u.user_id
@@ -91,6 +92,9 @@ export async function GET(request: NextRequest) {
         attendees: b.expected_attendees,
         expected_attendees: b.expected_attendees,
         status: b.status,
+        rejection_remarks: b.rejection_remarks,
+        rejectionRemarks: b.rejection_remarks,
+        remarks: b.rejection_remarks,
         createdAt: b.created_at,
         created_at: b.created_at,
       })),
@@ -124,8 +128,15 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
     const venueId = body.venueId
     const purpose = (body.purpose || body.eventName || body.title || '').trim()
-    const description = (body.description || body.eventDescription || '').trim()
+    const rawDescription = (body.description || body.eventDescription || '').trim()
+    const equipment = Array.isArray(body.equipment) ? body.equipment : []
     const expectedAttendees = body.expectedAttendees
+
+    let description = rawDescription
+    if (equipment.length > 0) {
+      const equipmentStr = `[Equipment: ${equipment.join(', ')}]`
+      description = description ? `${description}\n\n${equipmentStr}` : equipmentStr
+    }
 
     let startAt = body.startAt
     let endAt = body.endAt
@@ -290,6 +301,7 @@ export async function POST(request: NextRequest) {
         venueName: venue.venue_name,
         slot: `${startTimeStr}-${endTimeStr}`,
         attendees: attendeesNum,
+        equipment: equipment.length > 0 ? equipment : undefined,
       })
 
       await tx.$executeRaw`
@@ -344,6 +356,7 @@ export async function POST(request: NextRequest) {
         startTime: result.booking.start_time,
         endTime: result.booking.end_time,
         attendees: attendeesNum,
+        equipment: equipment,
         status: result.booking.status,
       },
     }, { status: 201 })

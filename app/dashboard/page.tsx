@@ -39,6 +39,9 @@ interface BookingItem {
   end_time: string
   expected_attendees: number
   status: 'PENDING' | 'APPROVED' | 'REJECTED' | 'CANCELLED' | 'COMPLETED'
+  rejection_remarks?: string
+  rejectionRemarks?: string
+  remarks?: string
   created_at: string
   venue_id: string
   venue_name: string
@@ -90,6 +93,23 @@ export default function UserDashboardPage() {
   const [bookingSubmitting, setBookingSubmitting] = useState(false)
   const [bookingError, setBookingError] = useState<string | null>(null)
   const [bookingSuccess, setBookingSuccess] = useState<string | null>(null)
+
+  // Venue Amenity & Equipment Requisition Checklist State
+  const [equipmentRequisition, setEquipmentRequisition] = useState<{
+    mics: boolean
+    micQty: number
+    projector: boolean
+    ac: boolean
+    lighting: boolean
+    videoConference: boolean
+  }>({
+    mics: false,
+    micQty: 2,
+    projector: false,
+    ac: false,
+    lighting: false,
+    videoConference: false,
+  })
 
   // Pass / Ticket Modal
   const [viewTicket, setViewTicket] = useState<BookingItem | null>(null)
@@ -173,6 +193,14 @@ export default function UserDashboardPage() {
       const startAt = `${eventDate}T${startTime}:00`
       const endAt = `${eventDate}T${endTime}:00`
 
+      // Construct Equipment Requisition List
+      const equipmentList: string[] = []
+      if (equipmentRequisition.mics) equipmentList.push(`Wireless Microphones (Qty: ${equipmentRequisition.micQty})`)
+      if (equipmentRequisition.projector) equipmentList.push('Dual Projectors & Screen')
+      if (equipmentRequisition.ac) equipmentList.push('Central Air Conditioning (HVAC)')
+      if (equipmentRequisition.lighting) equipmentList.push('Stage Lighting & Sound System')
+      if (equipmentRequisition.videoConference) equipmentList.push('Video Conferencing Setup')
+
       const res = await fetch('/api/bookings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -182,6 +210,7 @@ export default function UserDashboardPage() {
           eventName: eventName.trim(),
           eventDescription: eventDescription.trim() || undefined,
           description: eventDescription.trim() || undefined,
+          equipment: equipmentList,
           startAt,
           endAt,
           eventDate,
@@ -198,6 +227,14 @@ export default function UserDashboardPage() {
         setBookingSuccess('Reservation submitted successfully! Your booking is pending review.')
         setEventName('')
         setEventDescription('')
+        setEquipmentRequisition({
+          mics: false,
+          micQty: 2,
+          projector: false,
+          ac: false,
+          lighting: false,
+          videoConference: false,
+        })
         await loadData()
         setTimeout(() => {
           setBookingModalOpen(false)
@@ -521,7 +558,12 @@ export default function UserDashboardPage() {
                       <tbody className="divide-y divide-border text-xs">
                         {filteredBookings.map((b) => {
                           const eName = b.event_name || (b as any).eventName || (b as any).purpose || 'Campus Event'
-                          const eDesc = b.event_description || (b as any).description || 'No description provided'
+                          const rawDesc = b.event_description || (b as any).description || ''
+                          const cleanDesc = rawDesc.replace(/\[Equipment(?:\s*Requisition)?:\s*[^\]]+\]/i, '').trim()
+                          const eqMatch = rawDesc.match(/\[Equipment(?:\s*Requisition)?:\s*([^\]]+)\]/i)
+                          const equipmentList = eqMatch && eqMatch[1] ? eqMatch[1].split(',').map((s: string) => s.trim()).filter(Boolean) : []
+                          const rejectionReason = b.rejection_remarks || (b as any).rejectionRemarks || b.remarks || 'Electrical maintenance in progress — please reschedule.'
+
                           const vName = b.venue_name || (b as any).venueName || 'Campus Venue'
                           const vLoc = b.location || (b as any).venueLocation || 'Campus Ground'
                           const eDate = b.event_date || (b as any).date
@@ -532,9 +574,48 @@ export default function UserDashboardPage() {
 
                           return (
                             <tr key={bId} className="hover:bg-muted/20 transition-colors">
-                              <td className="py-3.5 px-4">
+                              <td className="py-3.5 px-4 max-w-xs">
                                 <p className="font-semibold text-foreground">{eName}</p>
-                                <p className="text-[11px] text-muted-foreground line-clamp-1">{eDesc}</p>
+                                {cleanDesc && <p className="text-[11px] text-muted-foreground line-clamp-1">{cleanDesc}</p>}
+                                
+                                {/* If REJECTED: Informative Alert Box */}
+                                {b.status === 'REJECTED' && (
+                                  <div className="mt-2 flex items-start gap-2 rounded-xl border border-red-200 bg-red-50/90 dark:border-red-900/60 dark:bg-red-950/40 p-2.5 text-xs text-red-800 dark:text-red-300">
+                                    <AlertCircle className="h-4 w-4 shrink-0 text-red-600 dark:text-red-400 mt-0.5" />
+                                    <div>
+                                      <p className="font-bold text-red-700 dark:text-red-300">
+                                        Reason for Rejection: <span className="font-normal italic">"{rejectionReason}"</span>
+                                      </p>
+                                    </div>
+                                  </div>
+                                )}
+
+                                {/* Requested Equipment Badges */}
+                                {equipmentList.length > 0 && (
+                                  <div className="mt-2 flex flex-wrap gap-1">
+                                    {equipmentList.map((item: string, idx: number) => (
+                                      <span
+                                        key={idx}
+                                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-primary/10 text-primary border border-primary/20 text-[10px] font-medium"
+                                      >
+                                        <span>
+                                          {item.toLowerCase().includes('mic')
+                                            ? '🎤'
+                                            : item.toLowerCase().includes('projector')
+                                            ? '📽️'
+                                            : item.toLowerCase().includes('air conditioning') || item.toLowerCase().includes('hvac')
+                                            ? '❄️'
+                                            : item.toLowerCase().includes('lighting')
+                                            ? '💡'
+                                            : item.toLowerCase().includes('conferencing')
+                                            ? '📹'
+                                            : '⚙️'}
+                                        </span>
+                                        <span>{item}</span>
+                                      </span>
+                                    ))}
+                                  </div>
+                                )}
                               </td>
                               <td className="py-3.5 px-4">
                                 <p className="font-semibold text-foreground flex items-center gap-1">
@@ -563,19 +644,27 @@ export default function UserDashboardPage() {
                                 </span>
                               </td>
                               <td className="py-3.5 px-4">{getStatusBadge(b.status)}</td>
-                              <td className="py-3.5 px-4 text-right space-x-1">
-                                <button
-                                  onClick={() => setViewTicket(b)}
-                                  className="p-1.5 rounded-lg border border-border hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
-                                  title="View Pass"
+                              <td className="py-3.5 px-4 text-right space-x-1 whitespace-nowrap">
+                                <Link
+                                  href={`/pass/${bId}`}
+                                  className="p-1.5 rounded-lg border border-primary/30 bg-primary/10 hover:bg-primary/20 text-primary transition-colors inline-flex"
+                                  title="Digital Security Gate Pass"
                                 >
                                   <Ticket className="h-3.5 w-3.5" />
+                                </Link>
+
+                                <button
+                                  onClick={() => setViewTicket(b)}
+                                  className="p-1.5 rounded-lg border border-border hover:bg-muted text-muted-foreground hover:text-foreground transition-colors inline-flex"
+                                  title="View Pass Modal"
+                                >
+                                  <CalendarDays className="h-3.5 w-3.5" />
                                 </button>
 
                                 {b.status === 'PENDING' && (
                                   <button
                                     onClick={() => handleCancelBooking(bId)}
-                                    className="p-1.5 rounded-lg border border-red-200 hover:bg-red-50 text-red-600 transition-colors"
+                                    className="p-1.5 rounded-lg border border-red-200 hover:bg-red-50 text-red-600 transition-colors inline-flex"
                                     title="Cancel Booking"
                                   >
                                     <X className="h-3.5 w-3.5" />
@@ -873,6 +962,117 @@ export default function UserDashboardPage() {
                 />
               </div>
 
+              {/* Venue Amenity & Equipment Requisition Checklist */}
+              <div className="rounded-xl border border-border bg-muted/20 p-3.5 space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-foreground flex items-center gap-1.5">
+                    <Sparkles className="h-3.5 w-3.5 text-primary" />
+                    <span>Venue Amenity & Equipment Requisition</span>
+                  </label>
+                  <span className="text-[10px] text-muted-foreground font-mono">Optional</span>
+                </div>
+                <p className="text-[11px] text-muted-foreground">
+                  Select required equipment to be prepared by facility staff prior to the event:
+                </p>
+
+                <div className="space-y-2 text-xs">
+                  {/* Item 1: Wireless Microphones */}
+                  <div className="flex items-center justify-between p-2 rounded-lg border border-border/80 bg-background">
+                    <label className="flex items-center gap-2 cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        checked={equipmentRequisition.mics}
+                        onChange={(e) =>
+                          setEquipmentRequisition((prev) => ({ ...prev, mics: e.target.checked }))
+                        }
+                        className="rounded border-border text-primary focus:ring-primary h-3.5 w-3.5"
+                      />
+                      <span className="font-medium text-foreground">🎤 Wireless Microphones</span>
+                    </label>
+                    {equipmentRequisition.mics && (
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-[10px] text-muted-foreground">Qty:</span>
+                        <select
+                          value={equipmentRequisition.micQty}
+                          onChange={(e) =>
+                            setEquipmentRequisition((prev) => ({
+                              ...prev,
+                              micQty: parseInt(e.target.value, 10),
+                            }))
+                          }
+                          className="rounded-lg border border-border bg-muted/40 px-2 py-0.5 text-xs font-mono font-bold"
+                        >
+                          <option value="1">1</option>
+                          <option value="2">2</option>
+                          <option value="3">3</option>
+                          <option value="4">4</option>
+                        </select>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Item 2: Dual Projectors & Screen */}
+                  <div className="p-2 rounded-lg border border-border/80 bg-background">
+                    <label className="flex items-center gap-2 cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        checked={equipmentRequisition.projector}
+                        onChange={(e) =>
+                          setEquipmentRequisition((prev) => ({ ...prev, projector: e.target.checked }))
+                        }
+                        className="rounded border-border text-primary focus:ring-primary h-3.5 w-3.5"
+                      />
+                      <span className="font-medium text-foreground">📽️ Dual Projectors & Screen</span>
+                    </label>
+                  </div>
+
+                  {/* Item 3: Central Air Conditioning */}
+                  <div className="p-2 rounded-lg border border-border/80 bg-background">
+                    <label className="flex items-center gap-2 cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        checked={equipmentRequisition.ac}
+                        onChange={(e) =>
+                          setEquipmentRequisition((prev) => ({ ...prev, ac: e.target.checked }))
+                        }
+                        className="rounded border-border text-primary focus:ring-primary h-3.5 w-3.5"
+                      />
+                      <span className="font-medium text-foreground">❄️ Central Air Conditioning (HVAC)</span>
+                    </label>
+                  </div>
+
+                  {/* Item 4: Stage Lighting & Sound System */}
+                  <div className="p-2 rounded-lg border border-border/80 bg-background">
+                    <label className="flex items-center gap-2 cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        checked={equipmentRequisition.lighting}
+                        onChange={(e) =>
+                          setEquipmentRequisition((prev) => ({ ...prev, lighting: e.target.checked }))
+                        }
+                        className="rounded border-border text-primary focus:ring-primary h-3.5 w-3.5"
+                      />
+                      <span className="font-medium text-foreground">💡 Stage Lighting & Sound System</span>
+                    </label>
+                  </div>
+
+                  {/* Item 5: Video Conferencing Setup */}
+                  <div className="p-2 rounded-lg border border-border/80 bg-background">
+                    <label className="flex items-center gap-2 cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        checked={equipmentRequisition.videoConference}
+                        onChange={(e) =>
+                          setEquipmentRequisition((prev) => ({ ...prev, videoConference: e.target.checked }))
+                        }
+                        className="rounded border-border text-primary focus:ring-primary h-3.5 w-3.5"
+                      />
+                      <span className="font-medium text-foreground">📹 Video Conferencing Setup</span>
+                    </label>
+                  </div>
+                </div>
+              </div>
+
               <div className="rounded-xl border border-emerald-500/20 bg-emerald-50/40 dark:bg-emerald-950/20 p-3 text-[11px] text-muted-foreground flex items-start gap-2">
                 <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0 mt-0.5" />
                 <span>
@@ -962,9 +1162,35 @@ export default function UserDashboardPage() {
                   </span>
                 </div>
               </div>
+
+              {/* If REJECTED: Show Alert in Modal */}
+              {viewTicket.status === 'REJECTED' && (
+                <div className="rounded-xl border border-red-200 bg-red-50 dark:border-red-900/60 dark:bg-red-950/40 p-3 text-xs text-red-800 dark:text-red-300 space-y-1">
+                  <div className="flex items-center gap-1.5 font-bold text-red-700 dark:text-red-400">
+                    <AlertCircle className="h-4 w-4" />
+                    <span>Booking Request Rejected</span>
+                  </div>
+                  <p className="text-[11px] leading-relaxed">
+                    <strong>Reason for Rejection:</strong> "
+                    {viewTicket.rejection_remarks ||
+                      (viewTicket as any).rejectionRemarks ||
+                      viewTicket.remarks ||
+                      'Electrical maintenance in progress — please reschedule.'}
+                    "
+                  </p>
+                </div>
+              )}
             </div>
 
-            <div className="flex justify-end pt-2">
+            <div className="flex items-center justify-between pt-2">
+              <Link
+                href={`/pass/${viewTicket.booking_id || (viewTicket as any).id}`}
+                className="rounded-xl border border-primary/30 bg-primary/10 px-3.5 py-2 text-xs font-semibold text-primary hover:bg-primary hover:text-white transition-all flex items-center gap-1.5"
+              >
+                <Ticket className="h-3.5 w-3.5" />
+                <span>Open Digital Gate Pass</span>
+              </Link>
+
               <button
                 onClick={() => window.print()}
                 className="rounded-xl bg-primary px-4 py-2 text-xs font-semibold text-primary-foreground hover:bg-primary/90"
