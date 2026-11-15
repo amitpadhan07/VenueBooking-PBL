@@ -42,7 +42,7 @@ export async function POST(request: NextRequest) {
     const runAttempt = async (clientId: string, requesterRole: string) => {
       const startTime = performance.now()
       try {
-        const res = await fetch(`${origin}/api/bookings/concurrent-safe`, {
+        const res = await fetch(`${origin}/api/bookings`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -53,7 +53,7 @@ export async function POST(request: NextRequest) {
             purpose: `PBL Concurrency Trial (${clientId})`,
             startAt,
             endAt,
-            clientRequestId: clientId,
+            expectedAttendees: 1,
           }),
         })
 
@@ -97,7 +97,7 @@ export async function POST(request: NextRequest) {
         totalRequestsFired: 2,
         successfulAllocations: successCount,
         conflictsPrevented: conflictCount,
-        doubleBookingPrevented: successCount === 1,
+        doubleBookingPrevented: successCount === 1 && conflictCount === 1,
       },
       requests: [requestA, requestB],
       explanation:
